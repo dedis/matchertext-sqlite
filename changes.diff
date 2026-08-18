@@ -1,0 +1,3777 @@
+diff --git a/.gitignore b/.gitignore
+new file mode 100644
+index 0000000000..c3df22eca5
+--- /dev/null
++++ b/.gitignore
+@@ -0,0 +1,29 @@
++/.DS_Store
++/.idea/
++/.main.mk.checks
++/.target_source
++/.tclenv.sh
++/Makefile
++/config.log
++/*.a
++/*.c
++/*.dylib
++/*.dSYM/
++/*.h
++/*.o
++/*.out
++/*.pc
++/*.sql
++/*.y
++/has_tclsh*
++/jimsh
++/lemon
++/mkkeywordhash
++/mksourceid
++/srcck1
++/src-verify
++/testdir*/
++/testfixture
++/testrun_*/
++/testrunner.*
++/tsrc/
+diff --git a/Makefile.msc b/Makefile.msc
+index 220367810c..2f851f13fc 100644
+--- a/Makefile.msc
++++ b/Makefile.msc
+@@ -1291,7 +1291,7 @@ LIBOBJS0 = vdbe.lo parse.lo alter.lo analyze.lo attach.lo auth.lo \
+          fts5.lo \
+          func.lo global.lo hash.lo \
+          icu.lo insert.lo json.lo legacy.lo loadext.lo \
+-         main.lo malloc.lo mem0.lo mem1.lo mem2.lo mem3.lo mem5.lo \
++         main.lo malloc.lo matchertext.lo mem0.lo mem1.lo mem2.lo mem3.lo mem5.lo \
+          memdb.lo memjournal.lo \
+          mutex.lo mutex_noop.lo mutex_unix.lo mutex_w32.lo \
+          notify.lo opcodes.lo os.lo os_kv.lo os_unix.lo os_win.lo \
+@@ -1363,6 +1363,7 @@ SRC00 = \
+   $(TOP)\src\loadext.c \
+   $(TOP)\src\main.c \
+   $(TOP)\src\malloc.c \
++  $(TOP)\src\matchertext.c \
+   $(TOP)\src\mem0.c \
+   $(TOP)\src\mem1.c \
+   $(TOP)\src\mem2.c \
+@@ -1547,6 +1548,7 @@ TESTSRC = \
+   $(TOP)\src\test_intarray.c \
+   $(TOP)\src\test_journal.c \
+   $(TOP)\src\test_malloc.c \
++  $(TOP)\src\test_matchertext.c \
+   $(TOP)\src\test_md5.c \
+   $(TOP)\src\test_multiplex.c \
+   $(TOP)\src\test_mutex.c \
+@@ -2123,6 +2125,9 @@ main.lo:	$(TOP)\src\main.c $(HDR)
+ malloc.lo:	$(TOP)\src\malloc.c $(HDR)
+ 	$(LTCOMPILE) $(CORE_COMPILE_OPTS) -c $(TOP)\src\malloc.c
+ 
++matchertext.lo:	$(TOP)\src\matchertext.c $(HDR)
++	$(LTCOMPILE) $(CORE_COMPILE_OPTS) -c $(TOP)\src\matchertext.c
++
+ mem0.lo:	$(TOP)\src\mem0.c $(HDR)
+ 	$(LTCOMPILE) $(CORE_COMPILE_OPTS) -c $(TOP)\src\mem0.c
+ 
+diff --git a/README.md b/README.md
+index 990befcd2d..0d2ac4a83e 100644
+--- a/README.md
++++ b/README.md
+@@ -1,428 +1,213 @@
+-<h1 align="center">SQLite Source Repository</h1>
+-
+-This repository contains the complete source code for the
+-[SQLite database engine](https://sqlite.org/) going back
+-to 2000-05-29.  The tree includes many tests and some
+-documentation, though additional tests and most documentation
+-are managed separately.
+-
+-See the [on-line documentation](https://sqlite.org/) for more information
+-about what SQLite is and how it works from a user's perspective.  This
+-README file is about the source code that goes into building SQLite,
+-not about how SQLite is used.
+-
+-## Version Control
+-
+-SQLite sources are managed using
+-[Fossil](https://fossil-scm.org/), a distributed version control system
+-that was specifically designed and written to support SQLite development.
+-The [Fossil repository](https://sqlite.org/src/timeline) contains the urtext.
+-
+-If you are reading this on GitHub or some other Git repository or service,
+-then you are looking at a mirror.  The names of check-ins and
+-other artifacts in a Git mirror are different from the official
+-names for those objects.  The official names for check-ins are
+-found in a footer on the check-in comment for authorized mirrors.
+-The official check-in name can also be seen in the `manifest.uuid` file
+-in the root of the tree.  Always use the official name, not  the
+-Git-name, when communicating about an SQLite check-in.
+-
+-If you pulled your SQLite source code from a secondary source and want to
+-verify its integrity, there are hints on how to do that in the
+-[Verifying Code Authenticity](#vauth) section below.
+-
+-## Contacting The SQLite Developers
+-
+-The preferred way to ask questions or make comments about SQLite is to
+-visit the [SQLite Forum](https://sqlite.org/forum) at
+-<https://sqlite.org/forum/>.  Anonymous postings are permitted. For
+-bug reports, please use the [SQLite bugs
+-forum](https://sqlite.org/bugs) at <https://sqlite.org/bugs>.
+-
+-If you think you have found a bug that has security implications and
+-you do not want to report it on the public forum, you can send a private
+-email to drh at sqlite dot org.
+-
+-## Public Domain
+-
+-The SQLite source code is in the public domain.  See
+-<https://sqlite.org/copyright.html> for details. 
+-
+-Because SQLite is in the public domain, we do not normally accept pull
+-requests, because if we did take a pull request, the changes in that
+-pull request might carry a copyright and the SQLite source code would
+-then no longer be fully in the public domain.
+-
+-## Obtaining The SQLite Source Code
+-
+-Source code tarballs or ZIP archives are available at:
+-
+-  *  [Latest trunk check-in](https://sqlite.org/src/rchvdwnld/trunk).
+-
+-  *  [Latest release](https://sqlite.org/src/rchvdwnld/release)
+-
+-  *  For other check-ins, browse the
+-     [project timeline](https://sqlite.org/src/timeline?y=ci) and
+-     click on the check-in hash of the check-in you want to download.
+-     On the resulting "info" page, click one of the options to the
+-     right of the "**Downloads:**" label in the "**Overview**" section
+-     near the top.
+-
+-To access sources directly using [Fossil](https://fossil-scm.org/home),
+-first install Fossil version 2.0 or later.
+-Source tarballs and precompiled binaries for Fossil are available at
+-<https://fossil-scm.org/home/uv/download.html>.  Fossil is
+-a stand-alone program.  To install, simply download or build the single
+-executable file and put that file someplace on your $PATH or %PATH%.
+-Then run commands like this:
+-
+-        mkdir -p ~/sqlite
+-        cd ~/sqlite
+-        fossil open https://sqlite.org/src
+-
+-The initial "fossil open" command will take two or three minutes.  Afterwards,
+-you can do fast, bandwidth-efficient updates to whatever versions of SQLite you
+-like.  Some examples:
+-
+-        fossil update trunk             ;# latest trunk check-in
+-        fossil update release           ;# latest official release
+-        fossil update trunk:2024-01-01  ;# First trunk check-in after 2024-01-01
+-        fossil update version-3.39.0    ;# Version 3.39.0
+-
+-Or type "fossil ui" to get a web-based user interface.
+-
+-## Compiling for Unix-like systems
+-
+-First create a directory in which to place
+-the build products.  It is recommended, but not required, that the
+-build directory be separate from the source directory.  Cd into the
+-build directory and then from the build directory run the configure
+-script found at the root of the source tree.  Then run "make".
+-See the [compile-for-unix.md](doc/compile-for-unix.md) document for
+-more detail.
+-
+-For example:
+-
+-        apt install gcc make tcl-dev  ;#  Install the necessary build tools
+-        tar xzf sqlite.tar.gz         ;#  Unpack the source tree into "sqlite"
+-        mkdir bld                     ;#  Build happens in a sibling directory
+-        cd bld                        ;#  Change to the build directory
+-        ../sqlite/configure           ;#  Run the configure script
+-        make sqlite3                  ;#  The "sqlite3" command-line tool
+-        make sqlite3.c                ;#  The "amalgamation" source file
+-        make sqldiff                  ;#  The "sqldiff" command-line tool
+-        #### Targets below require tcl-dev ####
+-        make tclextension-install     ;#  Install the SQLite TCL extension
+-        make devtest                  ;#  Run development tests
+-        make releasetest              ;#  Run full release tests
+-        make sqlite3_analyzer         ;#  Builds the "sqlite3_analyzer" tool
+-
+-See the makefile for additional targets.  For debugging builds, the
+-core developers typically run "configure" with options like this:
+-
+-        ../sqlite/configure --all --debug CFLAGS='-O0 -g'
+-
+-For release builds, the core developers usually do:
+-
+-        ../sqlite/configure --all
+-
+-Core deliverables (sqlite3.c, sqlite3) can be built without a TCL, but
+-many makefile targets require a "tclsh" TCL interpreter version 8.6
+-or later.  The "tclextension-install" target and the test targets that follow
+-all require TCL development libraries too.  ("apt install tcl-dev").  It is
+-helpful, but is not required, to install the SQLite TCL extension (the
+-"tclextension-install" target) prior to running tests.  The "releasetest"
+-target has additional requirements, such as "valgrind".
+-
+-On "make" command-lines, one can add "OPTIONS=..." to specify additional
+-compile-time options over and above those set by ./configure.  For example,
+-to compile with the SQLITE_OMIT_DEPRECATED compile-time option, one could say:
+-
+-        ./configure --all
+-        make OPTIONS=-DSQLITE_OMIT_DEPRECATED sqlite3
+-
+-The configure script uses [autosetup](https://msteveb.github.io/autosetup/).
+-If the configure script does not work out for you, there is a generic
+-makefile named "Makefile.linux-gcc" in the top directory of the source tree
+-that you can copy and edit to suit your needs.  Comments on the generic
+-makefile show what changes are needed.
+-
+-## Compiling for Windows Using MSVC
+-
+-On Windows, everything can be compiled with MSVC.
+-You will also need a working installation of TCL if you want to run tests,
+-though TCL is not required if you just want to build SQLite itself.
+-See the [compile-for-windows.md](doc/compile-for-windows.md) document for
+-additional information about how to install MSVC and TCL and configure your
+-build environment.
+-
+-If you want to run tests, you need to let SQLite know the location of your
+-TCL library, using a command like this:
+-
+-        set TCLDIR=c:\Tcl
+-
+-SQLite itself does not contain any TCL code, but it does use TCL to run
+-tests. You may need to install TCL development libraries in order to
+-successfully complete some makefile targets. It is helpful, but is not
+-required, to install the SQLite TCL extension (the "tclextension-install"
+-target) prior to running tests.
+-
+-The source tree contains a "make.bat" file that allows the same "make"
+-commands of Unix to work on Windows.  In the following, you can substitute
+-"nmake /f Makefile.msc" in place of "make", if you prefer to avoid this BAT
+-file:
+-
+-        make sqlite3.exe
+-        make sqlite3.c
+-        make sqldiff.exe
+-        #### Targets below require TCL development libraries ####
+-        make tclextension-install
+-        make devtest
+-        make releasetest
+-        make sqlite3_analyzer.exe
+- 
+-There are many other makefile targets.  See comments in Makefile.msc for
+-details.
+-
+-As with the unix Makefile, the OPTIONS=... argument can be passed on the nmake
+-command-line to enable new compile-time options.  For example:
+-
+-        make OPTIONS=-DSQLITE_OMIT_DEPRECATED sqlite3.exe
+-
+-## Source Tree Map
+-
+-  *  **src/** - This directory contains the primary source code for the
+-     SQLite core.  For historical reasons, C-code used for testing is
+-     also found here.  Source files intended for testing begin with "`test`".
+-     The `tclsqlite3.c` and `tclsqlite3.h` files are the TCL interface
+-     for SQLite and are also not part of the core.
+-
+-  *  **test/** - This directory and its subdirectories contains code used
+-     for testing.  Files that end in "`.test`" are TCL scripts that run
+-     tests using an augmented TCL interpreter named "testfixture".  Use
+-     a command like "`make testfixture`" to build that
+-     augmented TCL interpreter, then run individual tests using commands like
+-     "`testfixture test/main.test`".  This test/ subdirectory also contains
+-     additional C code modules and scripts for other kinds of testing.
+-
+-  *  **tool/** - This directory contains programs and scripts used to
+-     build some of the machine-generated code that goes into the SQLite
+-     core, as well as to build and run tests and perform diagnostics.
+-     The source code to [the Lemon parser generator](./doc/lemon.html) is
+-     found here.  There are also TCL scripts used to build and/or transform
+-     source code files.  For example, the tool/mksqlite3h.tcl script reads
+-     the src/sqlite.h.in file and uses it as a template to construct
+-     the deliverable "sqlite3.h" file that defines the SQLite interface.
+-
+-  *  **ext/** - Various extensions to SQLite are found under this
+-     directory.  For example, the FTS5 subsystem is in "ext/fts5/".
+-     Some of these extensions (ex: FTS3/4, FTS5, RTREE) might get built
+-     into the SQLite amalgamation, but not all of them.  The
+-     "ext/misc/" subdirectory contains an assortment of one-file extensions,
+-     many of which are omitted from the SQLite core, but which are included
+-     in the [SQLite CLI](https://sqlite.org/cli.html).
+-     
+-  *  **doc/** - Some documentation files about SQLite internals are found
+-     here.  Note, however, that the primary documentation designed for
+-     application developers and users of SQLite is in a completely separate
+-     repository.  Note also that the primary API documentation is derived
+-     from specially constructed comments in the src/sqlite.h.in file.
+-
+-### Generated Source Code Files
+-
+-Several of the C-language source files used by SQLite are generated from
+-other sources rather than being typed in manually by a programmer.  This
+-section will summarize those automatically-generated files.  To create all
+-of the automatically-generated files, simply run "make target&#95;source".
+-The "target&#95;source" make target will create a subdirectory "tsrc/" and
+-fill it with all the source files needed to build SQLite, both
+-manually-edited files and automatically-generated files.
+-
+-The SQLite interface is defined by the **sqlite3.h** header file, which is
+-generated from src/sqlite.h.in, ./manifest.uuid, and ./VERSION.  The
+-[Tcl script](https://www.tcl.tk) at tool/mksqlite3h.tcl does the conversion.
+-The manifest.uuid file contains the SHA3 hash of the particular check-in
+-and is used to generate the SQLITE\_SOURCE\_ID macro.  The VERSION file
+-contains the current SQLite version number.  The sqlite3.h header is really
+-just a copy of src/sqlite.h.in with the source-id and version number inserted
+-at just the right spots. Note that comment text in the sqlite3.h file is
+-used to generate much of the SQLite API documentation.  The Tcl scripts
+-used to generate that documentation are in a separate source repository.
+-
+-The SQL language parser is **parse.c** which is generated from a grammar in
+-the src/parse.y file.  The conversion of "parse.y" into "parse.c" is done
+-by the [lemon](./doc/lemon.html) LALR(1) parser generator.  The source code
+-for lemon is at tool/lemon.c.  Lemon uses the tool/lempar.c file as a
+-template for generating its parser.
+-Lemon also generates the **parse.h** header file, at the same time it
+-generates parse.c.
+-
+-The **opcodes.h** header file contains macros that define the numbers
+-corresponding to opcodes in the "VDBE" virtual machine.  The opcodes.h
+-file is generated by scanning the src/vdbe.c source file.  The
+-Tcl script at ./mkopcodeh.tcl does this scan and generates opcodes.h.
+-A second Tcl script, ./mkopcodec.tcl, then scans opcodes.h to generate
+-the **opcodes.c** source file, which contains a reverse mapping from
+-opcode-number to opcode-name that is used for EXPLAIN output.
+-
+-The **keywordhash.h** header file contains the definition of a hash table
+-that maps SQL language keywords (ex: "CREATE", "SELECT", "INDEX", etc.) into
+-the numeric codes used by the parse.c parser.  The keywordhash.h file is
+-generated by a C-language program at tool mkkeywordhash.c.
+-
+-The **pragma.h** header file contains various definitions used to parse
+-and implement the PRAGMA statements.  The header is generated by a
+-script **tool/mkpragmatab.tcl**. If you want to add a new PRAGMA, edit
+-the **tool/mkpragmatab.tcl** file to insert the information needed by the
+-parser for your new PRAGMA, then run the script to regenerate the
+-**pragma.h** header file.
+-
+-### The Amalgamation
+-
+-All of the individual C source code and header files (both manually-edited
+-and automatically-generated) can be combined into a single big source file
+-**sqlite3.c** called "the amalgamation".  The amalgamation is the recommended
+-way of using SQLite in a larger application.  Combining all individual
+-source code files into a single big source code file allows the C compiler
+-to perform more cross-procedure analysis and generate better code.  SQLite
+-runs about 5% faster when compiled from the amalgamation versus when compiled
+-from individual source files.
+-
+-The amalgamation is generated from the tool/mksqlite3c.tcl Tcl script.
+-First, all of the individual source files must be gathered into the tsrc/
+-subdirectory (using the equivalent of "make target_source") then the
+-tool/mksqlite3c.tcl script is run to copy them all together in just the
+-right order while resolving internal "#include" references.
+-
+-The amalgamation source file is more than 200K lines long.  Some symbolic
+-debuggers (most notably MSVC) are unable to deal with files longer than 64K
+-lines.  To work around this, a separate Tcl script, tool/split-sqlite3c.tcl,
+-can be run on the amalgamation to break it up into a single small C file
+-called **sqlite3-all.c** that does #include on about seven other files
+-named **sqlite3-1.c**, **sqlite3-2.c**, ..., **sqlite3-7.c**.  In this way,
+-all of the source code is contained within a single translation unit so
+-that the compiler can do extra cross-procedure optimization, but no
+-individual source file exceeds 32K lines in length.
+-
+-## How It All Fits Together
+-
+-SQLite is modular in design.
+-See the [architectural description](https://sqlite.org/arch.html)
+-for details. Other documents that are useful in
+-helping to understand how SQLite works include the
+-[file format](https://sqlite.org/fileformat2.html) description,
+-the [virtual machine](https://sqlite.org/opcode.html) that runs
+-prepared statements, the description of
+-[how transactions work](https://sqlite.org/atomiccommit.html), and
+-the [overview of the query planner](https://sqlite.org/optoverview.html).
+-
+-Decades of effort have gone into optimizing SQLite, both
+-for small size and high performance.  And optimizations tend to result in
+-complex code.  So there is a lot of complexity in the current SQLite
+-implementation.  It will not be the easiest library in the world to hack.
+-
+-### Key source code files
+-
+-  *  **sqlite.h.in** - This file defines the public interface to the SQLite
+-     library.  Readers will need to be familiar with this interface before
+-     trying to understand how the library works internally.  This file is
+-     really a template that is transformed into the "sqlite3.h" deliverable
+-     using a script invoked by the makefile.
+-
+-  *  **sqliteInt.h** - this header file defines many of the data objects
+-     used internally by SQLite.  In addition to "sqliteInt.h", some
+-     subsystems inside of sQLite have their own header files.  These internal
+-     interfaces are not for use by applications.  They can and do change
+-     from one release of SQLite to the next.
+-
+-  *  **parse.y** - This file describes the LALR(1) grammar that SQLite uses
+-     to parse SQL statements, and the actions that are taken at each step
+-     in the parsing process.  The file is processed by the
+-     [Lemon Parser Generator](./doc/lemon.html) to produce the actual C code
+-     used for parsing.
+-
+-  *  **vdbe.c** - This file implements the virtual machine that runs
+-     prepared statements.  There are various helper files whose names
+-     begin with "vdbe".  The VDBE has access to the vdbeInt.h header file
+-     which defines internal data objects.  The rest of SQLite interacts
+-     with the VDBE through an interface defined by vdbe.h.
+-
+-  *  **where.c** - This file (together with its helper files named
+-     by "where*.c") analyzes the WHERE clause and generates
+-     virtual machine code to run queries efficiently.  This file is
+-     sometimes called the "query optimizer".  It has its own private
+-     header file, whereInt.h, that defines data objects used internally.
+-
+-  *  **btree.c** - This file contains the implementation of the B-Tree
+-     storage engine used by SQLite.  The interface to the rest of the system
+-     is defined by "btree.h".  The "btreeInt.h" header defines objects
+-     used internally by btree.c and not published to the rest of the system.
+-
+-  *  **pager.c** - This file contains the "pager" implementation, the
+-     module that implements transactions.  The "pager.h" header file
+-     defines the interface between pager.c and the rest of the system.
+-
+-  *  **os_unix.c** and **os_win.c** - These two files implement the interface
+-     between SQLite and the underlying operating system using the run-time
+-     pluggable VFS interface.
+-
+-  *  **shell.c.in** - This file is not part of the core SQLite library.  This
+-     is the file that, when linked against sqlite3.a, generates the
+-     "sqlite3.exe" command-line shell.  The "shell.c.in" file is transformed
+-     into "shell.c" as part of the build process.
+-
+-  *  **tclsqlite.c** - This file implements the Tcl bindings for SQLite.  It
+-     is not part of the core SQLite library.  But as most of the tests in this
+-     repository are written in Tcl, the Tcl language bindings are important.
+-
+-  *  **test\*.c** - Files in the src/ folder that begin with "test" go into
+-     building the "testfixture.exe" program.  The testfixture.exe program is
+-     an enhanced Tcl shell.  The testfixture.exe program runs scripts in the
+-     test/ folder to validate the core SQLite code.  The testfixture program
+-     (and some other test programs too) is built and run when you type
+-     "make test".
+-
+-  *  **VERSION**, **manifest**, **manifest.tags**, and **manifest.uuid** -
+-     These files define the current SQLite version number. The "VERSION" file
+-     is human generated, but the "manifest", "manifest.tags", and
+-     "manifest.uuid" files are automatically generated by the
+-     [Fossil version control system](https://fossil-scm.org/).
+-
+-There are many other source files.  Each has a succinct header comment that
+-describes its purpose and role within the larger system.
+-
+-<a name="vauth"></a>
+-## Verifying Code Authenticity
+-
+-The `manifest` file at the root directory of the source tree
+-contains either a SHA3-256 hash or a SHA1 hash
+-for every source file in the repository.
+-The name of the version of the entire source tree is just the
+-SHA3-256 hash of the `manifest` file itself, possibly with the
+-last line of that file omitted if the last line begins with
+-"`# Remove this line`".
+-The `manifest.uuid` file should contain the SHA3-256 hash of the
+-`manifest` file. If all of the above hash comparisons are correct, then
+-you can be confident that your source tree is authentic and unadulterated.
+-Details on the format for the `manifest` files are available
+-[on the Fossil website](https://fossil-scm.org/home/doc/trunk/www/fileformat.wiki#manifest).
+-
+-The process of checking source code authenticity is automated by the 
+-makefile:
+-
+->   make verify-source
+-
+-Using the makefile to verify source integrity is good for detecting
+-accidental changes to the source tree, but malicious changes could be
+-hidden by also modifying the makefiles.
+-
+-## Contacts
+-
+-The main SQLite website is [https://sqlite.org/](https://sqlite.org/)
+-with geographically distributed backups at
+-[https://www2.sqlite.org/](https://www2.sqlite.org) and
+-[https://www3.sqlite.org/](https://www3.sqlite.org).
+-
+-Contact the SQLite developers through the
+-[SQLite Forum](https://sqlite.org/forum/).  In an emergency, you
+-can send private email to the lead developer at drh at sqlite dot org.
++# MatcherText additions to the SQLite driver
++
++This SQLite tree adds an opt-in MatcherText input discipline. The additions
++check the balance of `()`, `[]`, and `{}` before an external value can change
++an SQL boundary. All other bytes are nonmatchers.
++
++The additions do not change the SQLite database file format.
++
++## Build modes
++
++Build the additive mode with `SQLITE_ENABLE_MATCHERTEXT`:
++
++```sh
++./configure --dev
++make clean
++make OPTIONS="-DSQLITE_ENABLE_MATCHERTEXT" sqlite3 sqlite3.c
++```
++
++This mode adds the MatcherText syntax and APIs. The standard SQLite prepare
++and execution APIs remain available.
++
++Add `SQLITE_MATCHERTEXT_STRICT` to require the checked preparation API for
++external SQL:
++
++```sh
++make clean
++make OPTIONS="-DSQLITE_ENABLE_MATCHERTEXT -DSQLITE_MATCHERTEXT_STRICT" \
++  sqlite3 sqlite3.c testfixture
++```
++
++A build without `SQLITE_ENABLE_MATCHERTEXT` has the standard SQLite behavior.
++
++## MatcherText rule
++
++A value is MatcherText when its ASCII matcher pairs are correctly nested:
++
++```text
++valid:   text
++valid:   call(item[index])
++invalid: text]
++invalid: ([)]
++```
++
++The scanner is byte-based and linear. UTF-8 continuation bytes cannot be
++ASCII matchers. The default maximum nesting depth is 1,000. Set
++`SQLITE_MAX_MATCHER_DEPTH` at compile time to use another limit.
++
++SQL template checks do not count matcher bytes inside SQL comments. Matcher
++bytes in literals, identifiers, templates, and input arguments remain checked.
++
++## Checked preparation API
++
++`sqlite3_matchertext_prepare_v3()` composes one checked SQL template. It adds
++two typed placeholders:
++
++- `?V` is a text value. SQLite verifies it and binds it as a parameter.
++- `?I` is an identifier. SQLite verifies it and adds identifier delimiters.
++
++Example:
++
++```c
++const char *name = "alice";
++sqlite3_matchertext_arg args[2] = {
++  {SQLITE_MATCHERTEXT_IDENTIFIER, "users", 5},
++  {SQLITE_MATCHERTEXT_VALUE, name, (sqlite3_uint64)strlen(name)}
++};
++sqlite3_stmt *stmt = 0;
++int rc = sqlite3_matchertext_prepare_v3(
++  db,
++  "SELECT * FROM ?I WHERE name=?V",
++  -1,
++  0,
++  args,
++  2,
++  &stmt
++);
++```
++
++The API enforces these rules before SQLite parses the composed SQL:
++
++- The template must be NUL-free and valid MatcherText.
++- Each placeholder must have one argument of the correct type.
++- Every argument must be valid MatcherText.
++- An identifier must be non-NULL and NUL-free.
++- The template must contain one SQL statement.
++
++The output statement uses the standard `sqlite3_step()`, `sqlite3_reset()`,
++and `sqlite3_finalize()` lifecycle. The `prepFlags` argument accepts the normal
++`sqlite3_prepare_v3()` flags.
++
++## Value and identifier holes
++
++The tokenizer adds a value literal whose boundary is found by matcher balance:
++
++```sql
++SELECT M'(Alice (admin))';
++```
++
++The value of this expression is `Alice (admin)`. Quotes and SQL text inside
++the hole remain data because they do not define its end.
++
++Square-bracket identifiers also use matcher balance:
++
++```sql
++SELECT [display(name)] FROM [users];
++```
++
++The outer `[]` delimit the identifier. Matcher pairs inside the name must be
++balanced.
++
++## Verify-or-refuse and encode-and-embed
++
++`?V` is the verify-or-refuse path. It preserves the value bytes and rejects a
++value with unmatched matchers.
++
++The new `%m` conversion in `sqlite3_mprintf()` is the encode-and-embed path.
++It accepts arbitrary NUL-terminated text, escapes only unmatched matchers and
++backslashes, and writes an `M'(...)'` value literal. The parser decodes the
++literal to the original value.
++
++```c
++char *sql = sqlite3_mprintf("SELECT %m", "smile :]");
++/* sql is: SELECT M'(smile :\c[])' */
++
++sqlite3_stmt *stmt = 0;
++int rc = sqlite3_matchertext_prepare_v3(db, sql, -1, 0, 0, 0, &stmt);
++sqlite3_free(sql);
++```
++
++Balanced values without backslashes keep their original spelling inside the
++literal. The encoder changes only the representation required to preserve the
++hole boundary. The SQL value after decoding is unchanged.
++
++## Public verification and encoding APIs
++
++The build adds these C interfaces:
++
++```c
++int sqlite3_matchertext_verify(
++  const char *value,
++  sqlite3_int64 length
++);
++
++char *sqlite3_matchertext_encode(
++  const char *value,
++  sqlite3_int64 length,
++  sqlite3_int64 *output_length
++);
++
++char *sqlite3_matchertext_decode(
++  const char *value,
++  sqlite3_int64 length,
++  sqlite3_int64 *output_length
++);
++```
++
++A negative input length means that the input is NUL-terminated. The encoder
++and decoder return memory from `sqlite3_malloc64()`. Release it with
++`sqlite3_free()`.
++
++The escape alphabet is:
++
++| Input | Encoded form |
++| --- | --- |
++| `\` | `\\` |
++| `(` | `\o()` |
++| `)` | `\c()` |
++| `[` | `\o[]` |
++| `]` | `\c[]` |
++| `{` | `\o{}` |
++| `}` | `\c{}` |
++
++Only unmatched matcher characters use these forms. A matched pair remains
++unchanged.
++
++## Strict mode
++
++`SQLITE_MATCHERTEXT_STRICT` refuses external SQL passed through the legacy
++UTF-8 and UTF-16 `sqlite3_prepare*()` APIs and through `sqlite3_exec()`. The
++error directs the caller to `sqlite3_matchertext_prepare_v3()`.
++
++SQLite can still prepare its own internal SQL for schema work, `ANALYZE`,
++`VACUUM`, attached databases, and statement recompilation. Strict mode has no
++run-time PRAGMA or database-configuration switch.
++
++## Implementation files
++
++The principal additions are:
++
++- `src/matchertext.c`: verification, boundary scan, encoder, and decoder
++- `src/tokenize.c` and `src/parse.y`: value and identifier hole syntax
++- `src/prepare.c`: typed checked preparation
++- `src/printf.c`: the `%m` conversion
++- `src/sqlite.h.in`: public API declarations
++- `src/complete.c`: complete-statement scanning for MatcherText literals
++- `src/legacy.c`: strict-mode entry-point guard
++- `test/matchertext.test`: scanner, parser, API, strict-mode, and regression tests
++
++## Tests
++
++Build the strict test fixture and run the dedicated suite:
++
++```sh
++make clean
++make OPTIONS="-DSQLITE_ENABLE_MATCHERTEXT -DSQLITE_MATCHERTEXT_STRICT" \
++  testfixture
++./testfixture test/matchertext.test
++```
++
++Compile the SQLite library or amalgamation with `SQLITE_ENABLE_MATCHERTEXT`.
++Client code that uses the new declarations must also define this flag when it
++includes `sqlite3.h`. Only the library build needs
++`SQLITE_MATCHERTEXT_STRICT`.
+diff --git a/ext/fts5/test/fts5config.test b/ext/fts5/test/fts5config.test
+index 28f3146ea3..4b5d87c74d 100644
+--- a/ext/fts5/test/fts5config.test
++++ b/ext/fts5/test/fts5config.test
+@@ -110,9 +110,17 @@ do_catchsql_test 5.1 {
+   CREATE VIRTUAL TABLE xx USING fts5(x, tokenize="porter 'ascii");
+ } {1 {parse error in tokenize directive}} 
+ 
+-do_catchsql_test 5.2 {
+-  CREATE VIRTUAL TABLE xx USING fts5(x, [y[]);
+-} {0 {}}
++# [y[] names the column "y[".  With SQLITE_ENABLE_MATCHERTEXT a bracketed
++# identifier ends by matcher balance, so an unmatched '[' does not parse.
++ifcapable !matchertext {
++  do_catchsql_test 5.2 {
++    CREATE VIRTUAL TABLE xx USING fts5(x, [y[]);
++  } {0 {}}
++} else {
++  do_catchsql_test 5.2 {
++    CREATE VIRTUAL TABLE xx USING fts5(x, [y[]);
++  } {1 {unrecognized token: "[y["}}
++}
+ 
+ do_catchsql_test 5.3 {
+   CREATE VIRTUAL TABLE yy USING fts5(x, [y]]);
+diff --git a/main.mk b/main.mk
+index ac768333be..0ae57c5f56 100644
+--- a/main.mk
++++ b/main.mk
+@@ -531,7 +531,7 @@ LIBOBJS0 = alter.o analyze.o attach.o auth.o \
+          fts5.o \
+          func.o global.o hash.o \
+          icu.o insert.o json.o legacy.o loadext.o \
+-         main.o malloc.o mem0.o mem1.o mem2.o mem3.o mem5.o \
++         main.o malloc.o matchertext.o mem0.o mem1.o mem2.o mem3.o mem5.o \
+          memdb.o memjournal.o \
+          mutex.o mutex_noop.o mutex_unix.o mutex_w32.o \
+          notify.o opcodes.o os.o os_kv.o os_unix.o os_win.o \
+@@ -595,6 +595,7 @@ SRC = \
+   $(TOP)/src/loadext.c \
+   $(TOP)/src/main.c \
+   $(TOP)/src/malloc.c \
++  $(TOP)/src/matchertext.c \
+   $(TOP)/src/mem0.c \
+   $(TOP)/src/mem1.c \
+   $(TOP)/src/mem2.c \
+@@ -744,6 +745,7 @@ TESTSRC = \
+   $(TOP)/src/test_intarray.c \
+   $(TOP)/src/test_journal.c \
+   $(TOP)/src/test_malloc.c \
++  $(TOP)/src/test_matchertext.c \
+   $(TOP)/src/test_md5.c \
+   $(TOP)/src/test_multiplex.c \
+   $(TOP)/src/test_mutex.c \
+@@ -1254,6 +1256,9 @@ main.o:	$(TOP)/src/main.c $(DEPS_OBJ_COMMON)
+ malloc.o:	$(TOP)/src/malloc.c $(DEPS_OBJ_COMMON)
+ 	$(T.cc.sqlite) -c $(TOP)/src/malloc.c
+ 
++matchertext.o:	$(TOP)/src/matchertext.c $(DEPS_OBJ_COMMON)
++	$(T.cc.sqlite) -c $(TOP)/src/matchertext.c
++
+ mem0.o:	$(TOP)/src/mem0.c $(DEPS_OBJ_COMMON)
+ 	$(T.cc.sqlite) -c $(TOP)/src/mem0.c
+ 
+diff --git a/src/analyze.c b/src/analyze.c
+index b1523c9e69..620a2222ae 100644
+--- a/src/analyze.c
++++ b/src/analyze.c
+@@ -1949,6 +1949,9 @@ int sqlite3AnalysisLoad(sqlite3 *db, int iDb){
+ 
+   assert( iDb>=0 && iDb<db->nDb );
+   assert( db->aDb[iDb].pBt!=0 );
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  db->nMatchertextInternal++;
++#endif
+ 
+   /* Clear any prior statistics */
+   assert( sqlite3SchemaMutexHeld(db, iDb, 0) );
+@@ -2005,6 +2008,9 @@ int sqlite3AnalysisLoad(sqlite3 *db, int iDb){
+   if( rc==SQLITE_NOMEM ){
+     sqlite3OomFault(db);
+   }
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  db->nMatchertextInternal--;
++#endif
+   return rc;
+ }
+ 
+diff --git a/src/btree.c b/src/btree.c
+index 21aecc5efb..1e5cecf879 100644
+--- a/src/btree.c
++++ b/src/btree.c
+@@ -3338,9 +3338,7 @@ static int lockBtree(BtShared *pBt){
+     u32 usableSize;
+     u8 *page1 = pPage1->aData;
+     rc = SQLITE_NOTADB;
+-    /* EVIDENCE-OF: R-43737-39999 Every valid SQLite database file begins
+-    ** with the following 16 bytes (in hex): 53 51 4c 69 74 65 20 66 6f 72 6d
+-    ** 61 74 20 33 00. */
++    /* The first 16 bytes must match this build's file signature. */
+     if( memcmp(page1, zMagicHeader, 16)!=0 ){
+       goto page1_init_failed;
+     }
+diff --git a/src/btreeInt.h b/src/btreeInt.h
+index 12ca4f4297..8bc5e25c82 100644
+--- a/src/btreeInt.h
++++ b/src/btreeInt.h
+@@ -55,7 +55,7 @@
+ ** The format of the file header is as follows:
+ **
+ **   OFFSET   SIZE    DESCRIPTION
+-**      0      16     Header string: "SQLite format 3\000"
++**      0      16     Header string (SQLITE_FILE_HEADER)
+ **     16       2     Page size in bytes.  (1 means 65536)
+ **     18       1     File format write version
+ **     19       1     File format read version
+@@ -241,7 +241,7 @@ typedef struct CellInfo CellInfo;
+ ** -DSQLITE_FILE_HEADER="..." on the compiler command-line.  The
+ ** header must be exactly 16 bytes including the zero-terminator so
+ ** the string itself should be 15 characters long.  If you change
+-** the header, then your custom library will not be able to read 
++** the header, then your custom library will not be able to read
+ ** databases generated by the standard tools and the standard tools
+ ** will not be able to read databases created by your custom library.
+ */
+diff --git a/src/complete.c b/src/complete.c
+index d69c98996b..d77f9bd634 100644
+--- a/src/complete.c
++++ b/src/complete.c
+@@ -235,6 +235,18 @@ sqlite3_int64 sqlite3_incomplete(const char *zSql){
+         break;
+       }
+       case '[': {   /* Microsoft-style identifiers in [...] */
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++        /* End the name by matcher balance, as the tokenizer does, so that a
++        ** nested bracket does not end it early.  An interior that does not
++        ** balance is left to the legacy scan below, which either finds the
++        ** ']' the parser will reject or runs out and reports incomplete. */
++        i64 nName = sqlite3MatchertextEnd((const unsigned char*)zSql);
++        if( nName>0 ){
++          zSql += nName-1;
++          token = tkOTHER;
++          break;
++        }
++#endif
+         zSql++;
+         while( *zSql && *zSql!=']' ){ zSql++; }
+         if( *zSql==0 ){
+@@ -270,6 +282,19 @@ sqlite3_int64 sqlite3_incomplete(const char *zSql){
+       default: {
+ #ifdef SQLITE_EBCDIC
+         unsigned char c;
++#endif
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++        /* A matchertext literal is one token, so the quotes and semicolons
++        ** its value may carry do not end the statement. An ill-formed one
++        ** falls through and lexes as the identifier M, as in the tokenizer. */
++        if( (zSql[0]|0x20)=='m' && zSql[1]=='\'' ){
++          i64 nVal = sqlite3MatchertextEnd((const unsigned char*)(zSql+2));
++          if( nVal>0 && zSql[2+nVal]=='\'' ){
++            zSql += nVal+2;
++            token = tkOTHER;
++            break;
++          }
++        }
+ #endif
+         if( IdChar((u8)*zSql) ){
+           /* Keywords and unquoted identifiers */
+diff --git a/src/global.c b/src/global.c
+index 020eb2c02b..489789911a 100644
+--- a/src/global.c
++++ b/src/global.c
+@@ -366,6 +366,12 @@ int sqlite3PendingByte = 0x40000000;
+ u32 sqlite3TreeTrace = 0;
+ u32 sqlite3WhereTrace = 0;
+ 
++#if defined(SQLITE_ENABLE_MATCHERTEXT) \
++ && (defined(SQLITE_TEST) || defined(SQLITE_MATCHERTEXT_TEST_BYPASS))
++/* Permit the stock test suite to exercise legacy APIs.  Not in production. */
++int sqlite3MatchertextTestBypass = 1;
++#endif
++
+ #include "opcodes.h"
+ /*
+ ** Properties of opcodes.  The OPFLG_INITIALIZER macro is
+diff --git a/src/legacy.c b/src/legacy.c
+index 867587e5a2..9a2192028c 100644
+--- a/src/legacy.c
++++ b/src/legacy.c
+@@ -41,6 +41,13 @@ int sqlite3_exec(
+   int callbackIsInit;         /* True if callback data is initialized */
+ 
+   if( !sqlite3SafetyCheckOk(db) ) return SQLITE_MISUSE_BKPT;
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  if( !sqlite3MatchertextLegacyAllowed(db) ){
++    rc = sqlite3MatchertextLegacyError(db, "sqlite3_matchertext_prepare_v3()");
++    if( pzErrMsg ) *pzErrMsg = sqlite3_mprintf("%s", sqlite3_errmsg(db));
++    return rc;
++  }
++#endif
+   if( zSql==0 ) zSql = "";
+ 
+   sqlite3_mutex_enter(db->mutex);
+diff --git a/src/matchertext.c b/src/matchertext.c
+new file mode 100644
+index 0000000000..54e27d6abd
+--- /dev/null
++++ b/src/matchertext.c
+@@ -0,0 +1,502 @@
++/*
++** 2026 July 29
++**
++** The author disclaims copyright to this source code.  In place of
++** a legal notice, here is a blessing:
++**
++**    May you do good and not evil.
++**    May you find forgiveness for yourself and forgive others.
++**    May you share freely, never taking more than you give.
++**
++*************************************************************************
++** This file implements the matchertext syntactic discipline: the rule that
++** the ASCII matcher pairs "()", "[]" and "{}" must always match.
++**
++** Two routines are provided, corresponding to the two algorithms of the
++** matchertext development:
++**
++**   sqlite3MatchertextVerify()   VERIFY.  Decide whether a string is valid
++**                                matchertext.  One linear scan.
++**   sqlite3MatchertextEnd()      FINDEMBEDEND.  Given the opener of an
++**                                embedding, locate its matching closer by
++**                                matcher balance rather than by scanning
++**                                for a terminator.
++**
++** Both are host-independent: they inspect only the six matcher characters
++** and know nothing about SQL.  Neither routine allocates memory or modifies
++** its input.  That is the point.  A value admitted
++** by these checks is admitted by a passive verification, not rewritten by a
++** content-modifying transformation, so a bug here rejects data that should
++** have embedded rather than admitting a breakout.
++**
++** UTF-8 is scanned safely byte-by-byte.  Every matcher character is below
++** 0x80, while every byte of a multi-byte UTF-8 sequence is at or above
++** 0x80, so no part of a multi-byte character can be mistaken for a matcher.
++** No decoding step is required, and none is performed.  The caller must
++** supply the value in its final, fully decoded form: a check applied to any
++** earlier, still-encoded representation is unsound, because such a value can
++** acquire an unmatched matcher when a later stage decodes it.
++*/
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++
++#include "sqliteInt.h"
++
++/*
++** The maximum matcher nesting depth accepted.  Input nested more deeply than
++** this is rejected.  Rejection is safe: the value does not embed and the
++** statement fails to parse, which is the intended failure mode.  Deep nesting
++** is vanishingly rare in practice; the deepest matched nesting observed in a
++** 469-million-sample corpus of production source code was 500.
++*/
++#ifndef SQLITE_MAX_MATCHER_DEPTH
++# define SQLITE_MAX_MATCHER_DEPTH 1000
++#endif
++
++/*
++** The open matcher of each pending level is held on a stack of two-bit
++** entries, 32 levels to a u64 word.  Level numbering is zero-based, so a
++** current depth of d means levels 0 through d-1 are pending and MT_TOP()
++** reads level d-1.  Every level is written by MT_PUSH() before it is read.
++**
++** The arguments of these macros are evaluated more than once and so must be
++** free of side effects.
++*/
++#define MT_NWORD  ((SQLITE_MAX_MATCHER_DEPTH+31)/32)
++#define MT_PUSH(A,D,K) A[(D)>>5] = (A[(D)>>5] & ~(((u64)3)<<(((D)&31)*2))) | (((u64)(K))<<(((D)&31)*2))
++#define MT_TOP(A,D) ((int)((A[((D)-1)>>5] >> ((((D)-1)&31)*2)) & 3))
++
++/*
++** Classify one byte against the matcher pair set.  Returns a positive kind
++** 1, 2 or 3 for an opener, the negation of that kind for the corresponding
++** closer, and zero for a nonmatcher.  The sign carries open versus close and
++** the magnitude carries the pair, so an opener of kind k is closed by, and
++** only by, the byte that classifies as -k.
++*/
++static int mtClass(unsigned int c){
++  switch( c ){
++    case '(': return  1;
++    case ')': return -1;
++    case '[': return  2;
++    case ']': return -2;
++    case '{': return  3;
++    case '}': return -3;
++    default: return 0;
++  }
++}
++
++/*
++** Scan z[] maintaining the matcher stack.  If n is negative the scan runs to
++** the first zero byte, otherwise it runs for exactly n bytes.  The scan also
++** stops, short of either limit, at the first closer arriving while no opener
++** is pending: that byte is the balance boundary and is not consumed.
++**
++** Write the number of bytes consumed into *pnUsed.  Return the matcher depth
++** reached, which is never negative, or -1 if the input is not matchertext
++** because a closer met an opener of the wrong kind or the depth limit was
++** exceeded.
++**
++** A return of zero therefore means the bytes consumed are valid matchertext.
++** A positive return means they are valid so far but leave openers pending.
++*/
++static int mtScan(const unsigned char *z, i64 n, i64 *pnUsed){
++  u64 aStk[MT_NWORD];
++  i64 i;
++  int d = 0;
++  int k;
++
++  for(i=0; n<0 ? z[i]!=0 : i<n; i++){
++    k = mtClass(z[i]);
++    if( k==0 ) continue;
++    if( k>0 ){
++      if( d>=SQLITE_MAX_MATCHER_DEPTH ){
++        *pnUsed = i;
++        return -1;
++      }
++      MT_PUSH(aStk, d, k);
++      d++;
++    }else{
++      if( d==0 ) break;
++      if( MT_TOP(aStk, d)!= -k ){
++        *pnUsed = i;
++        return -1;
++      }
++      d--;
++    }
++  }
++  *pnUsed = i;
++  assert( d>=0 );
++  return d;
++}
++
++/*
++** VERIFY.  Return true if and only if z[0..n-1] is valid matchertext.
++**
++** The empty string is matchertext.  Zero bytes within the input are ordinary
++** nonmatchers, so a value carrying them is handled like any other.
++**
++** A false return is not an error condition to be repaired.  It reports that
++** the value cannot embed verbatim, and the caller must reject it or route it
++** through an encoder that escapes its unmatched matchers.
++*/
++int sqlite3MatchertextVerify(const unsigned char *z, i64 n){
++  i64 nUsed;
++  assert( n>=0 );
++  assert( z!=0 || n==0 );
++  /* The scan stops early at an unmatched closer, so requiring that it
++  ** consumed every byte is what rejects input such as "a)b". */
++  return mtScan(z, n, &nUsed)==0 && nUsed==n;
++}
++
++/* The three routines below are host glue rather than scanner: they read the
++** SQLite tokenizer and connection state, so they depend on the full internal
++** header.  SQLITE_MATCHERTEXT_SCANNER_ONLY excludes them, which is what lets
++** the cross-language scanner test compile this file against a stub header and
++** keep the boundary routines self-contained. */
++#ifndef SQLITE_MATCHERTEXT_SCANNER_ONLY
++
++/* Verify SQL matcher balance without treating comment text as SQL input. */
++int sqlite3MatchertextVerifySql(const unsigned char *z, i64 n){
++  u64 aStk[MT_NWORD];
++  i64 i = 0;
++  int d = 0;
++
++  assert( n>=0 );
++  assert( z!=0 || n==0 );
++  while( i<n ){
++    int j;
++    int tokenType;
++    int nToken = sqlite3GetToken(z+i, &tokenType);
++    if( nToken<=0 || nToken>n-i ) return 0;
++    if( tokenType!=TK_COMMENT ){
++      for(j=0; j<nToken; j++){
++        int k = mtClass(z[i+j]);
++        if( k>0 ){
++          if( d>=SQLITE_MAX_MATCHER_DEPTH ) return 0;
++          MT_PUSH(aStk, d, k);
++          d++;
++        }else if( k<0 ){
++          if( d==0 || MT_TOP(aStk, d)!= -k ) return 0;
++          d--;
++        }
++      }
++    }
++    i += nToken;
++  }
++  return d==0;
++}
++
++/* Legacy SQL entry points remain available only to SQLite's own parsers. */
++int sqlite3MatchertextInternalAllowed(sqlite3 *db){
++  Parse *pParse = db->pParse;
++  return db->init.busy
++      || db->nSqlExec                        /* inside OP_SqlExec: SQLite's own SQL */
++      || db->nMatchertextInternal
++      || (pParse!=0 && pParse->eParseMode!=PARSE_MODE_NORMAL);
++}
++
++/* Set the migration error returned by a disabled legacy SQL entry point. */
++int sqlite3MatchertextLegacyError(sqlite3 *db, const char *zReplacement){
++  int rc;
++  if( !sqlite3SafetyCheckOk(db) ) return SQLITE_MISUSE_BKPT;
++  sqlite3_mutex_enter(db->mutex);
++  sqlite3ErrorWithMsg(db, SQLITE_MISUSE,
++      "matchertext requires %s; pass inputs separately", zReplacement);
++  rc = sqlite3ApiExit(db, SQLITE_MISUSE);
++  sqlite3_mutex_leave(db->mutex);
++  return rc;
++}
++
++#endif /* SQLITE_MATCHERTEXT_SCANNER_ONLY */
++
++/*
++** FINDEMBEDEND.  If z[0] opens an embedding "o m c" in zero-terminated text,
++** locate c by matcher balance and return the total length of the embedding,
++** so that the embedded value m is the nUsed-2 bytes at z[1] where nUsed is
++** the return value.  Return 0 if no embedding ends here, that is if z[0] is
++** not an opener at all, if the balance never returns to the level of z[0], if
++** a closer of the wrong kind arrives, or if the text ends first.
++**
++** Deciding whether z[0] opens an embedding is left here rather than asked of
++** the caller, so that the matcher pairs stay written down in exactly one
++** place.  A caller that had to test for an opener itself would be a second
++** copy of the configuration, free to drift from this one.
++**
++** The scan of m begins one byte past the opener, and the byte that first
++** drives the depth below zero is exactly the terminating closer.  This is the
++** operational form of the boundary result proved in embed_boundary.lean: for
++** valid matchertext m every prefix of m has non-negative depth, m itself
++** returns to depth zero, and the following closer takes the depth to -1.  The
++** value may therefore hold any character at all, quotes and the host's own
++** terminators included, provided only that its matchers balance.
++**
++** This routine locates the boundary and nothing else.  Whatever encloses the
++** embedding, a quote in SQL or a tag in markup, remains the caller's concern,
++** which is what keeps this file free of any one host language.
++*/
++i64 sqlite3MatchertextEnd(const unsigned char *z){
++  i64 nUsed;
++  int k;
++
++  assert( z!=0 );
++  k = mtClass(z[0]);
++  if( k<=0 ) return 0;
++
++  /* Anything other than a clean return to depth zero means the value is not
++  ** matchertext, or the text ran out with openers still pending. */
++  if( mtScan(z+1, -1, &nUsed)!=0 ) return 0;
++
++  /* The boundary byte closes z[0] only if it is of the matching kind.  This
++  ** also rejects the case where the text ended, since a zero byte classifies
++  ** as a nonmatcher and can never equal -k. */
++  if( mtClass(z[1+nUsed])!= -k ) return 0;
++
++  return nUsed+2;
++}
++
++/*
++** The escape alphabet used by TOMATCHERTEXT and FROMMATCHERTEXT below.
++**
++**   \\     a literal backslash
++**   \o()   \c()   a literal '(' or ')'
++**   \o[]   \c[]   a literal '[' or ']'
++**   \o{}   \c{}   a literal '{' or '}'
++**
++** These are the forms table 1 of the matchertext paper proposes, and the
++** letters follow the Unicode character classes: 'o' for Open Punctuation and
++** 'c' for Close Punctuation.
++**
++** Each escape names its pair by carrying that pair, matched.  So an escape is
++** itself matchertext, and the escape mechanism obeys the discipline it serves
++** rather than sitting outside it.  A scanner counting balance sees \o() go up
++** by one and back down, never negative and never leaving anything pending.
++**
++** Note for the Lean development: to_matchertext.lean derives the output-is-
++** matchertext theorem from
++**
++**   hesc : forall c x, x in esc c -> Nonmatcher Pi x
++**
++** which asks that an escape hold no matcher and so establishes MT (esc c) by
++** the flat rule.  That hypothesis is stronger than the theorem needs.  These
++** escapes satisfy MT (esc c) by the nesting rule instead, so generalizing
++** hesc to the weaker "forall c, MT Pi (esc c)" would cover them, and esc_mt
++** becomes one way of discharging it rather than the only way.
++**
++** The backslash is the introducer.  It is escaped unconditionally, which is
++** what makes the encoding injective: a value that already reads like an
++** escape encodes to something that decodes back to itself.
++*/
++#define MT_ESC '\\'
++
++/* Return the three characters following the introducer for matcher kind k, or
++** 0 if k is not a matcher.  The first says open or close, the pair that
++** follows names which matcher is meant and keeps the escape balanced. */
++static const char *mtEscape(int k){
++  switch( k ){
++    case  1: return "o()";
++    case -1: return "c()";
++    case  2: return "o[]";
++    case -2: return "c[]";
++    case  3: return "o{}";
++    case -3: return "c{}";
++  }
++  return 0;
++}
++
++/* The inverse of mtEscape().  Given the three characters after the
++** introducer, return the byte they stand for, or 0 if they are not an escape.
++** The pair must be a real matcher pair, so "\o(]" is not an escape. */
++static int mtUnescape(int c1, int c2, int c3){
++  int k = mtClass((unsigned int)c2);
++  if( k<=0 || mtClass((unsigned int)c3)!= -k ) return 0;
++  if( c1=='o' ) return c2;
++  if( c1=='c' ) return c3;
++  return 0;
++}
++
++/*
++** TOMATCHERTEXT.  Encode z[0..n-1] so that the result is valid matchertext,
++** whatever the input was.  Return a zero-terminated buffer from
++** sqlite3_malloc64(), or 0 if allocation fails, and write its length to
++** *pnOut when pnOut is not 0.  The caller frees it with sqlite3_free().
++**
++** Only unmatched matchers are escaped, and the backslash that introduces an
++** escape.  A value whose matchers already balance and which holds no
++** backslash therefore passes through byte for byte, which is what keeps the
++** common case readable in the SQL text.  Exception: nesting at the depth
++** limit exactly gets its deepest pair escaped; see pass one below.
++**
++** This is the total counterpart of VERIFY.  VERIFY answers whether a value
++** may embed as it stands and refuses the ones that may not; this refuses
++** nothing, so a free-form field carrying "smile :]" or 'printf("[")' can
++** still be placed in a hole.  The price is that the value is no longer
++** verbatim, so a reader has to run FROMMATCHERTEXT to get the bytes back.
++*/
++char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut){
++  unsigned char *aEsc;      /* aEsc[i] is true if z[i] must be escaped */
++  char *zOut;
++  i64 i, j, nOut;
++  int d = 0;
++  int k;
++  /* Positions of openers not yet matched.  The depth cap below bounds how
++  ** many there can be, so this is a fixed size rather than one slot per
++  ** input byte.  Positions are i64: an int would truncate past 2 GiB. */
++  i64 aStk[SQLITE_MAX_MATCHER_DEPTH];
++
++  assert( n>=0 );
++  assert( z!=0 || n==0 );
++
++  if( n==0 ){
++    zOut = sqlite3_malloc64(1);
++    if( zOut ) zOut[0] = 0;
++    if( pnOut ) *pnOut = 0;
++    return zOut;
++  }
++
++  aEsc = sqlite3_malloc64((sqlite3_uint64)n);
++  if( aEsc==0 ) return 0;
++  memset(aEsc, 0, (size_t)n);
++
++  /* Pass one: find the matchers that are not matched.  Nesting past
++  ** SQLITE_MAX_MATCHER_DEPTH-1 is escaped as if unmatched; escapes carry
++  ** one pair of their own, so the output stays within the host's limit. */
++  for(i=0; i<n; i++){
++    k = mtClass((unsigned char)z[i]);
++    if( k==0 ) continue;
++    if( k>0 ){
++      if( d>=SQLITE_MAX_MATCHER_DEPTH-1 ){
++        aEsc[i] = 1;
++      }else{
++        aStk[d++] = i;
++      }
++    }else if( d>0 && mtClass((unsigned char)z[aStk[d-1]])== -k ){
++      d--;
++    }else{
++      aEsc[i] = 1;
++    }
++  }
++  while( d>0 ) aEsc[aStk[--d]] = 1;
++
++  /* Pass two: size the result, then fill it.  An escaped matcher costs three
++  ** extra bytes and a backslash one. */
++  nOut = n;
++  for(i=0; i<n; i++){
++    if( aEsc[i] ) nOut += 3;
++    else if( z[i]==MT_ESC ) nOut += 1;
++  }
++  zOut = sqlite3_malloc64((sqlite3_uint64)nOut + 1);
++  if( zOut==0 ){
++    sqlite3_free(aEsc);
++    return 0;
++  }
++  for(i=0, j=0; i<n; i++){
++    if( aEsc[i] ){
++      const char *zEsc = mtEscape(mtClass((unsigned char)z[i]));
++      assert( zEsc!=0 );
++      zOut[j++] = MT_ESC;
++      zOut[j++] = zEsc[0];
++      zOut[j++] = zEsc[1];
++      zOut[j++] = zEsc[2];
++    }else if( z[i]==MT_ESC ){
++      zOut[j++] = MT_ESC;
++      zOut[j++] = MT_ESC;
++    }else{
++      zOut[j++] = z[i];
++    }
++  }
++  assert( j==nOut );
++  zOut[j] = 0;
++
++  sqlite3_free(aEsc);
++  if( pnOut ) *pnOut = nOut;
++  return zOut;
++}
++
++/*
++** FROMMATCHERTEXT.  Undo TOMATCHERTEXT.  Return a zero-terminated buffer from
++** sqlite3_malloc64(), or 0 if allocation fails, and write its length to
++** *pnOut when pnOut is not 0.
++**
++** A backslash that does not introduce one of the escapes above is copied
++** through unchanged.  The encoder never produces such a sequence, since it
++** doubles every backslash, so this only affects text written by hand, where
++** passing it through is friendlier than failing.  The decoder is therefore
++** not injective, but it does not need to be: what must hold is that decoding
++** an encoded value returns the original, and that is what the round trip
++** test asserts.
++**
++** This routine is a data-fidelity convenience and carries no part of the
++** security argument, which rests on the encoder's output being matchertext.
++**
++** The in-place form is what the parser uses, so that reading a value costs no
++** allocation; the allocating form is for callers holding const input.
++**
++** bFull nonzero is the value alphabet, the inverse of TOMATCHERTEXT: matcher
++** escapes decode and \\ collapses.  Zero is the name alphabet for [...]:
++** matcher escapes only, a backslash stays an ordinary byte as in stock
++** SQLite.
++*/
++i64 sqlite3MatchertextDecodeInPlace(char *z, i64 n, int bFull){
++  i64 i, j;
++  int c;
++
++  assert( n>=0 );
++  assert( z!=0 || n==0 );
++
++  /* Decoding only ever shortens, so the result can overwrite the input as the
++  ** scan advances: j never runs ahead of i. */
++  for(i=0, j=0; i<n; ){
++    if( bFull && z[i]==MT_ESC && i+1<n && z[i+1]==MT_ESC ){
++      z[j++] = MT_ESC;
++      i += 2;
++    }else if( z[i]==MT_ESC && i+3<n
++           && (c = mtUnescape((unsigned char)z[i+1], (unsigned char)z[i+2],
++                              (unsigned char)z[i+3]))!=0 ){
++      z[j++] = (char)c;
++      i += 4;
++    }else{
++      z[j++] = z[i];
++      i++;
++    }
++    assert( j<=i );
++  }
++  z[j] = 0;
++  return j;
++}
++
++/*
++** Public interfaces to the two routines above, for an application that
++** places a value in a hole itself rather than through the %m conversion.
++** A negative n means the input is zero-terminated.
++*/
++int sqlite3_matchertext_verify(const char *z, sqlite3_int64 n){
++#ifdef SQLITE_ENABLE_API_ARMOR
++  if( z==0 ) return 0;
++#endif
++  if( n<0 ) n = (i64)strlen(z);
++  return sqlite3MatchertextVerify((const unsigned char*)z, n);
++}
++char *sqlite3_matchertext_encode(const char *z, sqlite3_int64 n,
++                                 sqlite3_int64 *pn){
++#ifdef SQLITE_ENABLE_API_ARMOR
++  if( z==0 ){ (void)SQLITE_MISUSE_BKPT; return 0; }
++#endif
++  if( n<0 ) n = (i64)strlen(z);
++  return sqlite3MatchertextEncode(z, n, pn);
++}
++char *sqlite3_matchertext_decode(const char *z, sqlite3_int64 n,
++                                 sqlite3_int64 *pn){
++  char *zOut;
++#ifdef SQLITE_ENABLE_API_ARMOR
++  if( z==0 ){ (void)SQLITE_MISUSE_BKPT; return 0; }
++#endif
++  if( n<0 ) n = (i64)strlen(z);
++  zOut = sqlite3_malloc64((sqlite3_uint64)n + 1);
++  if( zOut==0 ) return 0;
++  if( n>0 ) memcpy(zOut, z, (size_t)n);
++  zOut[n] = 0;
++  n = sqlite3MatchertextDecodeInPlace(zOut, n, 1);
++  if( pn ) *pn = n;
++  return zOut;
++}
++
++#endif /* SQLITE_ENABLE_MATCHERTEXT */
+diff --git a/src/memdb.c b/src/memdb.c
+index bfafba6f68..ae97f4170b 100644
+--- a/src/memdb.c
++++ b/src/memdb.c
+@@ -792,7 +792,13 @@ unsigned char *sqlite3_serialize(
+   if( pBt==0 ) goto serialize_out;
+   szPage = sqlite3BtreeGetPageSize(pBt);
+   zSql = sqlite3_mprintf("PRAGMA \"%w\".page_count", zSchema);
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  db->nMatchertextInternal++;
++#endif
+   rc = zSql ? sqlite3_prepare_v2(db, zSql, -1, &pStmt, 0) : SQLITE_NOMEM;
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  db->nMatchertextInternal--;
++#endif
+   sqlite3_free(zSql);
+   if( rc ) goto serialize_out;
+   rc = sqlite3_step(pStmt);
+@@ -800,7 +806,13 @@ unsigned char *sqlite3_serialize(
+     sz = sqlite3_column_int64(pStmt, 0)*szPage;
+     if( sz==0 ){
+       sqlite3_reset(pStmt);
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++      db->nMatchertextInternal++;
++#endif
+       sqlite3_exec(db, "BEGIN IMMEDIATE; COMMIT;", 0, 0, 0);
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++      db->nMatchertextInternal--;
++#endif
+       rc = sqlite3_step(pStmt);
+       if( rc==SQLITE_ROW ){
+         sz = sqlite3_column_int64(pStmt, 0)*szPage;
+@@ -872,7 +884,13 @@ int sqlite3_deserialize(
+   if( zSql==0 ){
+     rc = SQLITE_NOMEM;
+   }else{
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++    db->nMatchertextInternal++;
++#endif
+     rc = sqlite3_prepare_v2(db, zSql, -1, &pStmt, 0);
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++    db->nMatchertextInternal--;
++#endif
+     sqlite3_free(zSql);
+   }
+   if( rc ) goto end_deserialize;
+diff --git a/src/parse.y b/src/parse.y
+index 93ebf5c9ac..76ac20a37b 100644
+--- a/src/parse.y
++++ b/src/parse.y
+@@ -1192,6 +1192,15 @@ expr(A) ::= nm(X) DOT nm(Y) DOT nm(Z). {
+ }
+ term(A) ::= NULL|FLOAT|BLOB(X). {A=tokenExpr(pParse,@X,X); /*A-overwrites-X*/}
+ term(A) ::= STRING(X).          {A=tokenExpr(pParse,@X,X); /*A-overwrites-X*/}
++%ifdef SQLITE_ENABLE_MATCHERTEXT
++term(A) ::= MTSTRING(X). {
++  assert( X.n>=5 );        /* The shortest literal is M'()' */
++  A = sqlite3ExprAlloc(pParse->db, TK_STRING, &X, 0);
++  if( A ) sqlite3Dequote(A->u.zToken);
++  assert( A==0 || (A->pLeft==0 && A->pRight==0) );
++  assert( A==0 || (A->flags & (EP_Quoted|EP_DblQuoted))==0 );
++}
++%endif SQLITE_ENABLE_MATCHERTEXT
+ term(A) ::= INTEGER(X). {
+   int iValue;
+   if( sqlite3GetInt32(X.z, &iValue)==0 ){
+diff --git a/src/prepare.c b/src/prepare.c
+index 136abe636f..eb3f1e1032 100644
+--- a/src/prepare.c
++++ b/src/prepare.c
+@@ -931,6 +931,194 @@ int sqlite3Reprepare(Vdbe *p){
+   return SQLITE_OK;
+ }
+ 
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++/* Prepare one checked template and bind its ?V arguments. */
++int sqlite3_matchertext_prepare_v3(
++  sqlite3 *db,
++  const char *zTemplate,
++  int nTemplate,
++  unsigned int prepFlags,
++  const sqlite3_matchertext_arg *aArg,
++  int nArg,
++  sqlite3_stmt **ppStmt
++){
++  sqlite3_str *pOut = 0;
++  char *zCopy = 0;
++  char *zSql = 0;
++  const char *zTail = 0;
++  int i = 0;
++  int iArg = 0;
++  int iBind = 0;
++  int rc = SQLITE_OK;
++
++  if( ppStmt==0 ) return SQLITE_MISUSE_BKPT;
++  *ppStmt = 0;
++  if( !sqlite3SafetyCheckOk(db) || zTemplate==0 || nArg<0
++   || (nArg>0 && aArg==0)
++  ){
++    return SQLITE_MISUSE_BKPT;
++  }
++  if( nTemplate<0 ) nTemplate = sqlite3Strlen30(zTemplate);
++  if( memchr(zTemplate, 0, (size_t)nTemplate)!=0 ){
++    return sqlite3MatchertextLegacyError(db,
++        "sqlite3_matchertext_prepare_v3() with a NUL-free template");
++  }
++
++  sqlite3_mutex_enter(db->mutex);
++  zCopy = sqlite3DbStrNDup(db, zTemplate, nTemplate);
++  if( zCopy==0 ){
++    rc = SQLITE_NOMEM_BKPT;
++    goto matchertext_prepare_out;
++  }
++  if( !sqlite3MatchertextVerifySql((const unsigned char*)zCopy, nTemplate) ){
++    sqlite3ErrorWithMsg(db, SQLITE_ERROR,
++        "matchertext template is not valid matchertext");
++    rc = SQLITE_ERROR;
++    goto matchertext_prepare_out;
++  }
++
++  pOut = sqlite3_str_new(db);
++  while( i<nTemplate ){
++    int tokenType;
++    int nToken = sqlite3GetToken((u8*)zCopy+i, &tokenType);
++    int eType = 0;
++    if( tokenType==TK_VARIABLE && nToken==1 && zCopy[i]=='?'
++     && i+1<nTemplate && (zCopy[i+1]=='V' || zCopy[i+1]=='I')
++     && (i+2==nTemplate || !sqlite3IsIdChar((u8)zCopy[i+2]))
++    ){
++      eType = zCopy[i+1]=='V' ? SQLITE_MATCHERTEXT_VALUE
++                              : SQLITE_MATCHERTEXT_IDENTIFIER;
++    }else if( tokenType==TK_VARIABLE ){
++      sqlite3ErrorWithMsg(db, SQLITE_ERROR,
++          "matchertext templates require ?V or ?I parameters");
++      rc = SQLITE_ERROR;
++      goto matchertext_prepare_out;
++    }
++    if( eType ){
++      const sqlite3_matchertext_arg *pArg;
++      if( iArg>=nArg ){
++        sqlite3ErrorWithMsg(db, SQLITE_RANGE,
++            "matchertext template has more placeholders than arguments");
++        rc = SQLITE_RANGE;
++        goto matchertext_prepare_out;
++      }
++      pArg = &aArg[iArg++];
++      if( pArg->type!=eType ){
++        sqlite3ErrorWithMsg(db, SQLITE_MISMATCH,
++            "matchertext argument %d does not match ?%c",
++            iArg, eType==SQLITE_MATCHERTEXT_VALUE ? 'V' : 'I');
++        rc = SQLITE_MISMATCH;
++        goto matchertext_prepare_out;
++      }
++      if( pArg->data==0 && pArg->size!=0 ){
++        sqlite3ErrorWithMsg(db, SQLITE_MISUSE,
++            "matchertext argument %d has no data", iArg);
++        rc = SQLITE_MISUSE;
++        goto matchertext_prepare_out;
++      }
++      if( pArg->size>0x7fffffff
++       || !sqlite3MatchertextVerify((const unsigned char*)pArg->data,
++                                    (i64)pArg->size)
++      ){
++        sqlite3ErrorWithMsg(db, SQLITE_ERROR,
++            "matchertext argument %d is not valid matchertext", iArg);
++        rc = SQLITE_ERROR;
++        goto matchertext_prepare_out;
++      }
++      if( eType==SQLITE_MATCHERTEXT_VALUE ){
++        sqlite3_str_appendchar(pOut, 1, '?');
++      }else{
++        if( pArg->data==0
++         || memchr(pArg->data, 0, (size_t)pArg->size)!=0
++        ){
++          sqlite3ErrorWithMsg(db, SQLITE_ERROR,
++              "matchertext identifier %d must be non-NULL and NUL-free",
++              iArg);
++          rc = SQLITE_ERROR;
++          goto matchertext_prepare_out;
++        }
++        sqlite3_str_appendchar(pOut, 1, '[');
++        sqlite3_str_append(pOut, (const char*)pArg->data, (int)pArg->size);
++        sqlite3_str_appendchar(pOut, 1, ']');
++      }
++      i += 2;
++    }else{
++      if( nToken<=0 || nToken>nTemplate-i ){
++        sqlite3ErrorWithMsg(db, SQLITE_ERROR,
++            "matchertext template contains an invalid token");
++        rc = SQLITE_ERROR;
++        goto matchertext_prepare_out;
++      }
++      sqlite3_str_append(pOut, zCopy+i, nToken);
++      i += nToken;
++    }
++  }
++  if( iArg!=nArg ){
++    sqlite3ErrorWithMsg(db, SQLITE_RANGE,
++        "matchertext template has fewer placeholders than arguments");
++    rc = SQLITE_RANGE;
++    goto matchertext_prepare_out;
++  }
++  rc = sqlite3_str_errcode(pOut);
++  zSql = sqlite3_str_finish(pOut);
++  pOut = 0;
++  if( rc!=SQLITE_OK || zSql==0 ){
++    if( rc==SQLITE_OK ) rc = SQLITE_NOMEM_BKPT;
++    sqlite3Error(db, rc);
++    goto matchertext_prepare_out;
++  }
++  if( !sqlite3MatchertextVerifySql((const unsigned char*)zSql,
++                                    (i64)strlen(zSql)) ){
++    sqlite3ErrorWithMsg(db, SQLITE_ERROR,
++        "composed SQL is not valid matchertext");
++    rc = SQLITE_ERROR;
++    goto matchertext_prepare_out;
++  }
++
++  rc = sqlite3LockAndPrepare(db, zSql, -1,
++      SQLITE_PREPARE_SAVESQL|(prepFlags&SQLITE_PREPARE_MASK),
++      0, ppStmt, &zTail);
++  if( rc!=SQLITE_OK ) goto matchertext_prepare_out;
++  while( zTail[0] ){
++    int tokenType;
++    int nToken = sqlite3GetToken((const u8*)zTail, &tokenType);
++    if( tokenType!=TK_SPACE && tokenType!=TK_COMMENT && tokenType!=TK_SEMI ){
++      sqlite3_finalize(*ppStmt);
++      *ppStmt = 0;
++      sqlite3ErrorWithMsg(db, SQLITE_ERROR,
++          "matchertext templates must contain one SQL statement");
++      rc = SQLITE_ERROR;
++      goto matchertext_prepare_out;
++    }
++    zTail += nToken;
++  }
++  for(i=0; i<nArg; i++){
++    if( aArg[i].type==SQLITE_MATCHERTEXT_VALUE ){
++      iBind++;
++      if( aArg[i].data==0 ){
++        rc = sqlite3_bind_null(*ppStmt, iBind);
++      }else{
++        rc = sqlite3_bind_text64(*ppStmt, iBind, aArg[i].data, aArg[i].size,
++                                 SQLITE_TRANSIENT, SQLITE_UTF8);
++      }
++      if( rc!=SQLITE_OK ){
++        sqlite3_finalize(*ppStmt);
++        *ppStmt = 0;
++        goto matchertext_prepare_out;
++      }
++    }
++  }
++
++matchertext_prepare_out:
++  if( pOut ) sqlite3_free(sqlite3_str_finish(pOut));
++  sqlite3DbFree(db, zCopy);
++  sqlite3_free(zSql);
++  rc = sqlite3ApiExit(db, rc);
++  sqlite3_mutex_leave(db->mutex);
++  return rc;
++}
++#endif
++
+ 
+ /*
+ ** Two versions of the official API.  Legacy and new use.  In the legacy
+@@ -948,6 +1136,13 @@ int sqlite3_prepare(
+   const char **pzTail       /* OUT: End of parsed string */
+ ){
+   int rc;
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  if( sqlite3SafetyCheckOk(db) && !sqlite3MatchertextLegacyAllowed(db) ){
++    if( ppStmt ) *ppStmt = 0;
++    return sqlite3MatchertextLegacyError(db,
++        "sqlite3_matchertext_prepare_v3()");
++  }
++#endif
+   rc = sqlite3LockAndPrepare(db,zSql,nBytes,0,0,ppStmt,pzTail);
+   assert( rc==SQLITE_OK || ppStmt==0 || *ppStmt==0 );  /* VERIFY: F13021 */
+   return rc;
+@@ -960,6 +1155,13 @@ int sqlite3_prepare_v2(
+   const char **pzTail       /* OUT: End of parsed string */
+ ){
+   int rc;
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  if( sqlite3SafetyCheckOk(db) && !sqlite3MatchertextLegacyAllowed(db) ){
++    if( ppStmt ) *ppStmt = 0;
++    return sqlite3MatchertextLegacyError(db,
++        "sqlite3_matchertext_prepare_v3()");
++  }
++#endif
+   /* EVIDENCE-OF: R-37923-12173 The sqlite3_prepare_v2() interface works
+   ** exactly the same as sqlite3_prepare_v3() with a zero prepFlags
+   ** parameter.
+@@ -979,6 +1181,13 @@ int sqlite3_prepare_v3(
+   const char **pzTail       /* OUT: End of parsed string */
+ ){
+   int rc;
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  if( sqlite3SafetyCheckOk(db) && !sqlite3MatchertextLegacyAllowed(db) ){
++    if( ppStmt ) *ppStmt = 0;
++    return sqlite3MatchertextLegacyError(db,
++        "sqlite3_matchertext_prepare_v3()");
++  }
++#endif
+   /* EVIDENCE-OF: R-56861-42673 sqlite3_prepare_v3() differs from
+   ** sqlite3_prepare_v2() only in having the extra prepFlags parameter,
+   ** which is a bit array consisting of zero or more of the
+@@ -1076,6 +1285,13 @@ int sqlite3_prepare16(
+   const void **pzTail       /* OUT: End of parsed string */
+ ){
+   int rc;
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  if( sqlite3SafetyCheckOk(db) && !sqlite3MatchertextLegacyAllowed(db) ){
++    if( ppStmt ) *ppStmt = 0;
++    return sqlite3MatchertextLegacyError(db,
++        "sqlite3_matchertext_prepare_v3() with UTF-8 input");
++  }
++#endif
+   rc = sqlite3Prepare16(db,zSql,nBytes&~1,0,ppStmt,pzTail);
+   assert( rc==SQLITE_OK || ppStmt==0 || *ppStmt==0 );  /* VERIFY: F13021 */
+   return rc;
+@@ -1088,6 +1304,13 @@ int sqlite3_prepare16_v2(
+   const void **pzTail       /* OUT: End of parsed string */
+ ){
+   int rc;
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  if( sqlite3SafetyCheckOk(db) && !sqlite3MatchertextLegacyAllowed(db) ){
++    if( ppStmt ) *ppStmt = 0;
++    return sqlite3MatchertextLegacyError(db,
++        "sqlite3_matchertext_prepare_v3() with UTF-8 input");
++  }
++#endif
+   rc = sqlite3Prepare16(db,zSql,nBytes&~1,SQLITE_PREPARE_SAVESQL,ppStmt,pzTail);
+   assert( rc==SQLITE_OK || ppStmt==0 || *ppStmt==0 );  /* VERIFY: F13021 */
+   return rc;
+@@ -1101,6 +1324,13 @@ int sqlite3_prepare16_v3(
+   const void **pzTail       /* OUT: End of parsed string */
+ ){
+   int rc;
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  if( sqlite3SafetyCheckOk(db) && !sqlite3MatchertextLegacyAllowed(db) ){
++    if( ppStmt ) *ppStmt = 0;
++    return sqlite3MatchertextLegacyError(db,
++        "sqlite3_matchertext_prepare_v3() with UTF-8 input");
++  }
++#endif
+   rc = sqlite3Prepare16(db,zSql,nBytes&~1,
+          SQLITE_PREPARE_SAVESQL|(prepFlags&SQLITE_PREPARE_MASK),
+          ppStmt,pzTail);
+diff --git a/src/printf.c b/src/printf.c
+index b4ed4b05df..cd6159d04f 100644
+--- a/src/printf.c
++++ b/src/printf.c
+@@ -37,7 +37,8 @@
+ #define etESCAPE_j    17 /* %j -> JSON string literal w/o "..." */
+ #define etESCAPE_J    18 /* %J -> JSON string literal with "..." */
+ 
+-#define etINVALID     19 /* Any unrecognized conversion type */
++#define etESCAPE_m    19 /* %m -> matchertext literal M'(...)' */
++#define etINVALID     20 /* Any unrecognized conversion type */
+ 
+ 
+ /*
+@@ -94,6 +95,9 @@ for {set r 0} {$r<$mx} {incr r} {
+ static const char aDigits[] = "0123456789ABCDEF0123456789abcdef";
+ static const char aHex[]    = "0123456789abcdef";
+ static const char aPrefix[] = "-x0\000X0";
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++static const et_info mtFmtInfo = {  'm',  0, 4, etESCAPE_m,   0,  0,  0 };
++#endif
+ static const et_info fmtinfo[25] = {
+   /*  0 */  {  'd', 10, 1, etDECIMAL,    0,  0,  0 },
+   /*  1 */  {  'e',  0, 1, etEXP,        30, 0,  0 },
+@@ -383,6 +387,13 @@ void sqlite3_str_vappendf(
+       }
+     }
+ #else
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++    if( c=='m' ){
++      infop = &mtFmtInfo;
++      xtype = etESCAPE_m;
++    }else
++#endif
++    {
+     /* Fast hash-table lookup */
+     assert( ArraySize(fmtinfo)==25 );
+     idx = ((unsigned)c) % 25;
+@@ -395,6 +406,7 @@ void sqlite3_str_vappendf(
+       infop = &fmtinfo[0];
+       xtype = etINVALID;
+     }
++    }
+ #endif
+ 
+     /*
+@@ -960,6 +972,41 @@ void sqlite3_str_vappendf(
+         }
+         continue;
+       }
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++      case etESCAPE_m: {       /* %m: a matchertext literal, M'(content)' */
++        char *zVal;
++        i64 nVal;
++
++        if( bArgList ){
++          zVal = getTextArg(pArgList);
++        }else{
++          zVal = va_arg(ap,char*);
++        }
++        if( zVal==0 ){
++          sqlite3_str_append(pAccum, "NULL", 4);
++          bufpt = ""; length = width = 0;
++          break;
++        }
++        nVal = (i64)strlen(zVal);
++        if( precision>=0 && precision<nVal ) nVal = precision;
++        zVal = sqlite3MatchertextEncode(zVal, nVal, &nVal);
++        if( zVal==0 ){
++          sqlite3StrAccumSetError(pAccum, SQLITE_NOMEM);
++          return;
++        }
++        if( nVal>0x7fffffff ){
++          sqlite3_free(zVal);
++          sqlite3StrAccumSetError(pAccum, SQLITE_TOOBIG);
++          return;
++        }
++        sqlite3_str_append(pAccum, "M'(", 3);
++        sqlite3_str_append(pAccum, zVal, (int)nVal);
++        sqlite3_str_append(pAccum, ")'", 2);
++        sqlite3_free(zVal);
++        bufpt = ""; length = width = 0;
++        break;
++      }
++#endif
+       case etESCAPE_q:          /* %q: Escape ' characters */
+       case etESCAPE_Q:          /* %Q: Escape ' and enclose in '...' */
+       case etESCAPE_w: {        /* %w: Escape " characters */
+diff --git a/src/sqlite.h.in b/src/sqlite.h.in
+index 047a5b4015..0144e5939a 100644
+--- a/src/sqlite.h.in
++++ b/src/sqlite.h.in
+@@ -3252,6 +3252,46 @@ char *sqlite3_vmprintf(const char*, va_list);
+ char *sqlite3_snprintf(int,char*,const char*, ...);
+ char *sqlite3_vsnprintf(int,char*,const char*, va_list);
+ 
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++/*
++** CAPI3REF: Matchertext Preparation
++**
++** Matchertext builds accept external SQL through
++** sqlite3_matchertext_prepare_v3().  The template uses ?V for text values
++** and ?I for identifiers.  Each placeholder consumes one argument.  Values
++** become bound parameters.  Identifiers are delimited by SQLite after they
++** pass matchertext verification.
++*/
++#define SQLITE_MATCHERTEXT_VALUE       1
++#define SQLITE_MATCHERTEXT_IDENTIFIER  2
++typedef struct sqlite3_matchertext_arg sqlite3_matchertext_arg;
++struct sqlite3_matchertext_arg {
++  int type;
++  const void *data;
++  sqlite3_uint64 size;
++};
++/*
++** CAPI3REF: Matchertext Verification and Encoding
++**
++** ^sqlite3_matchertext_verify() returns non-zero if the first N bytes of Z
++** have balanced matcher pairs and zero otherwise.
++** ^sqlite3_matchertext_encode() escapes the unmatched matchers and the
++** backslashes in the first N bytes of Z, so that the result is valid
++** matchertext whatever the input was and may be embedded verbatim.
++** ^sqlite3_matchertext_decode() is its inverse.  ^Both return a
++** zero-terminated buffer from [sqlite3_malloc64()], which the caller must
++** [sqlite3_free()], or NULL if the allocation fails, and write the result
++** length to *PN when PN is not NULL.
++**
++** ^A negative N means the input is zero-terminated.  ^Encoding is total:
++** it never refuses a value.  ^The [%m] conversion of [sqlite3_mprintf()]
++** applies the encoder itself, so a caller using it needs neither routine.
++*/
++int sqlite3_matchertext_verify(const char*,sqlite3_int64);
++char *sqlite3_matchertext_encode(const char*,sqlite3_int64,sqlite3_int64*);
++char *sqlite3_matchertext_decode(const char*,sqlite3_int64,sqlite3_int64*);
++#endif
++
+ /*
+ ** CAPI3REF: Memory Allocation Subsystem
+ **
+@@ -4330,6 +4370,13 @@ int sqlite3_set_errmsg(sqlite3 *db, int errcode, const char *zErrMsg);
+ */
+ typedef struct sqlite3_stmt sqlite3_stmt;
+ 
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++int sqlite3_matchertext_prepare_v3(
++  sqlite3*, const char*, int, unsigned int,
++  const sqlite3_matchertext_arg*, int, sqlite3_stmt**
++);
++#endif
++
+ /*
+ ** CAPI3REF: Run-time Limits
+ ** METHOD: sqlite3
+diff --git a/src/sqliteInt.h b/src/sqliteInt.h
+index fbe7665bf2..9853aedc3e 100644
+--- a/src/sqliteInt.h
++++ b/src/sqliteInt.h
+@@ -1699,6 +1699,9 @@ struct sqlite3 {
+   u8 mTrace;                    /* zero or more SQLITE_TRACE flags */
+   u8 noSharedCache;             /* True if no shared-cache backends */
+   u8 nSqlExec;                  /* Number of pending OP_SqlExec opcodes */
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  u8 nMatchertextInternal;      /* Internal calls to legacy SQL APIs */
++#endif
+   u8 eOpenState;                /* Current condition of the connection */
+   u8 nFpDigit;                  /* Significant digits to keep on double->text */
+   int nextPagesize;             /* Pagesize after VACUUM if >0 */
+@@ -5976,4 +5979,32 @@ sqlite3_uint64 sqlite3Hwtime(void);
+ # define IS_STMT_SCANSTATUS(db) 0
+ #endif
+ 
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++i64 sqlite3MatchertextEnd(const unsigned char*);
++int sqlite3MatchertextVerify(const unsigned char*, i64);
++int sqlite3MatchertextVerifySql(const unsigned char*, i64);
++char *sqlite3MatchertextEncode(const char*, i64, i64*);
++i64 sqlite3MatchertextDecodeInPlace(char*, i64, int);
++int sqlite3MatchertextInternalAllowed(sqlite3*);
++int sqlite3MatchertextLegacyError(sqlite3*, const char*);
++#if defined(SQLITE_TEST) || defined(SQLITE_MATCHERTEXT_TEST_BYPASS)
++extern int sqlite3MatchertextTestBypass;
++# define sqlite3MatchertextEnabled() (!sqlite3MatchertextTestBypass)
++#else
++# define sqlite3MatchertextEnabled() 1
++#endif
++/* Strict mode is opt-in.  Without SQLITE_MATCHERTEXT_STRICT the build is
++** additive: the in-band M'(...)' value hole and [...] name hole are available,
++** but legacy SQL, ordinary quotes, and the standard file format keep working,
++** so the discipline is offered rather than imposed.  Strict mode additionally
++** refuses the legacy string entry points. */
++#ifdef SQLITE_MATCHERTEXT_STRICT
++# define sqlite3MatchertextStrict() sqlite3MatchertextEnabled()
++#else
++# define sqlite3MatchertextStrict() 0
++#endif
++#define sqlite3MatchertextLegacyAllowed(D) \
++  (!sqlite3MatchertextStrict() || sqlite3MatchertextInternalAllowed(D))
++#endif
++
+ #endif /* SQLITEINT_H */
+diff --git a/src/test_config.c b/src/test_config.c
+index 6eb4b7e97f..bbdb109c30 100644
+--- a/src/test_config.c
++++ b/src/test_config.c
+@@ -789,6 +789,12 @@ Tcl_SetVar2(interp, "sqlite_options", "mergesort", "1", TCL_GLOBAL_ONLY);
+   Tcl_SetVar2(interp, "sqlite_options", "normalize", "0", TCL_GLOBAL_ONLY);
+ #endif
+ 
++#if defined(SQLITE_ENABLE_MATCHERTEXT)
++  Tcl_SetVar2(interp, "sqlite_options", "matchertext", "1", TCL_GLOBAL_ONLY);
++#else
++  Tcl_SetVar2(interp, "sqlite_options", "matchertext", "0", TCL_GLOBAL_ONLY);
++#endif
++
+ #ifdef SQLITE_OMIT_WINDOWFUNC
+   Tcl_SetVar2(interp, "sqlite_options", "windowfunc", "0", TCL_GLOBAL_ONLY);
+ #else
+diff --git a/src/test_matchertext.c b/src/test_matchertext.c
+new file mode 100644
+index 0000000000..49a65de958
+--- /dev/null
++++ b/src/test_matchertext.c
+@@ -0,0 +1,304 @@
++/*
++** 2026 July 29
++**
++** The author disclaims copyright to this source code.  In place of
++** a legal notice, here is a blessing:
++**
++**    May you do good and not evil.
++**    May you find forgiveness for yourself and forgive others.
++**    May you share freely, never taking more than you give.
++**
++*************************************************************************
++** TCL commands that reach the matchertext scanner in src/matchertext.c
++** directly, so that VERIFY and FINDEMBEDEND can be tested on their own
++** rather than only through whatever the SQL surface happens to exercise.
++**
++** FINDEMBEDEND is reachable through SQL, since the tokenizer calls it, but
++** only for input the tokenizer is willing to hand it.  VERIFY has no SQL
++** surface at all: it belongs to the write path, where a caller checks a value
++** before placing it in a hole.  Without these commands its behaviour could
++** not be tested inside this tree.
++**
++** Values arrive as byte arrays rather than strings so that zero bytes and
++** invalid UTF-8 survive the trip from the test script.
++*/
++#include "sqliteInt.h"
++#include "tclsqlite.h"
++#include <string.h>
++
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++
++extern int getDbPointer(Tcl_Interp*, const char*, sqlite3**);
++
++/* Usage: sqlite3_matchertext_test_bypass BOOLEAN */
++static int SQLITE_TCLAPI test_matchertext_bypass(
++  void *clientData,
++  Tcl_Interp *interp,
++  int objc,
++  Tcl_Obj *CONST objv[]
++){
++  int b;
++  UNUSED_PARAMETER(clientData);
++  if( objc!=2 ){
++    Tcl_WrongNumArgs(interp, 1, objv, "BOOLEAN");
++    return TCL_ERROR;
++  }
++  if( Tcl_GetBooleanFromObj(interp, objv[1], &b) ) return TCL_ERROR;
++  sqlite3MatchertextTestBypass = b;
++  return TCL_OK;
++}
++
++/* Usage: sqlite3_matchertext_exec DB TEMPLATE ?V|I VALUE ...? */
++static int SQLITE_TCLAPI test_matchertext_exec(
++  void *clientData,
++  Tcl_Interp *interp,
++  int objc,
++  Tcl_Obj *CONST objv[]
++){
++  sqlite3_matchertext_arg *aArg = 0;
++  sqlite3 *db;
++  sqlite3_stmt *pStmt = 0;
++  Tcl_Obj *pError = 0;
++  Tcl_Obj *pResult;
++  int i;
++  int nArg;
++  int rc;
++  UNUSED_PARAMETER(clientData);
++
++  if( objc<3 || (objc&1)==0 ){
++    Tcl_WrongNumArgs(interp, 1, objv, "DB TEMPLATE ?V|I VALUE ...?");
++    return TCL_ERROR;
++  }
++  if( getDbPointer(interp, Tcl_GetString(objv[1]), &db) ) return TCL_ERROR;
++  nArg = (objc-3)/2;
++  if( nArg ){
++    aArg = sqlite3_malloc64(sizeof(*aArg)*(sqlite3_uint64)nArg);
++    if( aArg==0 ){
++      Tcl_SetResult(interp, "out of memory", TCL_STATIC);
++      return TCL_ERROR;
++    }
++  }
++  for(i=0; i<nArg; i++){
++    Tcl_Size n;
++    const char *zType = Tcl_GetString(objv[3+2*i]);
++    aArg[i].data = Tcl_GetByteArrayFromObj(objv[4+2*i], &n);
++    aArg[i].size = (sqlite3_uint64)n;
++    if( strcmp(zType, "V")==0 ){
++      aArg[i].type = SQLITE_MATCHERTEXT_VALUE;
++    }else if( strcmp(zType, "I")==0 ){
++      aArg[i].type = SQLITE_MATCHERTEXT_IDENTIFIER;
++    }else{
++      sqlite3_free(aArg);
++      Tcl_SetResult(interp, "argument type must be V or I", TCL_STATIC);
++      return TCL_ERROR;
++    }
++  }
++  pResult = Tcl_NewListObj(0, 0);
++  Tcl_IncrRefCount(pResult);
++  rc = sqlite3_matchertext_prepare_v3(db, Tcl_GetString(objv[2]), -1, 0,
++                                      aArg, nArg, &pStmt);
++  sqlite3_free(aArg);
++  while( rc==SQLITE_OK && pStmt ){
++    rc = sqlite3_step(pStmt);
++    if( rc!=SQLITE_ROW ) break;
++    for(i=0; i<sqlite3_column_count(pStmt); i++){
++      const unsigned char *z = sqlite3_column_text(pStmt, i);
++      if( z==0 && sqlite3_column_type(pStmt, i)!=SQLITE_NULL ){
++        rc = SQLITE_NOMEM;
++        break;
++      }
++      Tcl_ListObjAppendElement(0, pResult,
++          z ? Tcl_NewStringObj((const char*)z, -1) : Tcl_NewObj());
++    }
++    if( rc==SQLITE_ROW ) rc = SQLITE_OK;
++  }
++  if( rc==SQLITE_DONE ) rc = SQLITE_OK;
++  if( rc!=SQLITE_OK ){
++    pError = Tcl_NewStringObj(sqlite3_errmsg(db), -1);
++  }
++  if( pStmt ){
++    int rc2 = sqlite3_finalize(pStmt);
++    if( rc==SQLITE_OK ) rc = rc2;
++  }
++  if( rc==SQLITE_OK ){
++    Tcl_SetObjResult(interp, pResult);
++  }else{
++    Tcl_SetObjResult(interp,
++        pError ? pError : Tcl_NewStringObj(sqlite3_errstr(rc), -1));
++  }
++  Tcl_DecrRefCount(pResult);
++  return rc==SQLITE_OK ? TCL_OK : TCL_ERROR;
++}
++
++/*
++** Usage:  sqlite3_matchertext_verify VALUE
++**
++** Return 1 if VALUE is valid matchertext and 0 if it is not.  VALUE is taken
++** with an explicit length, so zero bytes within it are ordinary nonmatchers.
++*/
++static int SQLITE_TCLAPI test_matchertext_verify(
++  void *clientData,
++  Tcl_Interp *interp,
++  int objc,
++  Tcl_Obj *CONST objv[]
++){
++  unsigned char *zVal;
++  Tcl_Size nVal;
++
++  if( objc!=2 ){
++    Tcl_WrongNumArgs(interp, 1, objv, "VALUE");
++    return TCL_ERROR;
++  }
++  zVal = Tcl_GetByteArrayFromObj(objv[1], &nVal);
++  Tcl_SetObjResult(interp,
++      Tcl_NewIntObj(sqlite3_matchertext_verify((const char*)zVal, (i64)nVal)));
++  return TCL_OK;
++}
++
++/*
++** Usage:  sqlite3_matchertext_end TEXT
++**
++** Return the length of the embedding that begins at the first byte of TEXT,
++** or 0 if none does.  The value embedded is therefore the result minus two
++** bytes, starting one byte in.
++**
++** The scanner reads to a zero byte, matching how the tokenizer calls it, so
++** TEXT is copied into a zero-terminated buffer here rather than requiring
++** every caller to remember the terminator.
++*/
++static int SQLITE_TCLAPI test_matchertext_end(
++  void *clientData,
++  Tcl_Interp *interp,
++  int objc,
++  Tcl_Obj *CONST objv[]
++){
++  unsigned char *zVal;
++  Tcl_Size nVal;
++  unsigned char *zCopy;
++  i64 res;
++
++  if( objc!=2 ){
++    Tcl_WrongNumArgs(interp, 1, objv, "TEXT");
++    return TCL_ERROR;
++  }
++  zVal = Tcl_GetByteArrayFromObj(objv[1], &nVal);
++  zCopy = sqlite3_malloc64((sqlite3_uint64)nVal + 1);
++  if( zCopy==0 ){
++    Tcl_AppendResult(interp, "out of memory", (char*)0);
++    return TCL_ERROR;
++  }
++  if( nVal>0 ) memcpy(zCopy, zVal, (size_t)nVal);
++  zCopy[nVal] = 0;
++  res = sqlite3MatchertextEnd(zCopy);
++  sqlite3_free(zCopy);
++
++  Tcl_SetObjResult(interp, Tcl_NewWideIntObj((Tcl_WideInt)res));
++  return TCL_OK;
++}
++
++/*
++** Usage:  sqlite3_matchertext_encode VALUE
++**         sqlite3_matchertext_decode VALUE
++**
++** Exercise the public encoder and its inverse.  Values arrive and leave as
++** byte arrays, so zero bytes and invalid UTF-8 survive the trip.
++*/
++static int SQLITE_TCLAPI test_matchertext_recode(
++  void *clientData,
++  Tcl_Interp *interp,
++  int objc,
++  Tcl_Obj *CONST objv[]
++){
++  unsigned char *zVal;
++  Tcl_Size nVal;
++  char *zOut;
++  sqlite3_int64 nOut = 0;
++
++  if( objc!=2 ){
++    Tcl_WrongNumArgs(interp, 1, objv, "VALUE");
++    return TCL_ERROR;
++  }
++  zVal = Tcl_GetByteArrayFromObj(objv[1], &nVal);
++  if( clientData ){
++    zOut = sqlite3_matchertext_decode((const char*)zVal, (sqlite3_int64)nVal,
++                                      &nOut);
++  }else{
++    zOut = sqlite3_matchertext_encode((const char*)zVal, (sqlite3_int64)nVal,
++                                      &nOut);
++  }
++  if( zOut==0 ){
++    Tcl_AppendResult(interp, "out of memory", (char*)0);
++    return TCL_ERROR;
++  }
++  Tcl_SetObjResult(interp,
++      Tcl_NewByteArrayObj((unsigned char*)zOut, (Tcl_Size)nOut));
++  sqlite3_free(zOut);
++  return TCL_OK;
++}
++
++/*
++** Usage:  sqlite3_matchertext_printf FORMAT ?VALUE ...?
++**
++** Run sqlite3_mprintf() with up to four string arguments, so that the %m
++** conversion can be exercised from a test script.  Returns the formatted
++** string, or the empty string with a "rejected" prefix when mprintf returns
++** NULL, which is what a refused value looks like to a caller.
++*/
++static int SQLITE_TCLAPI test_matchertext_printf(
++  void *clientData,
++  Tcl_Interp *interp,
++  int objc,
++  Tcl_Obj *CONST objv[]
++){
++  const char *azArg[4] = { 0, 0, 0, 0 };
++  char *zOut;
++  int i;
++
++  if( objc<2 || objc>6 ){
++    Tcl_WrongNumArgs(interp, 1, objv, "FORMAT ?VALUE ...?");
++    return TCL_ERROR;
++  }
++  for(i=2; i<objc; i++){
++    azArg[i-2] = Tcl_GetString(objv[i]);
++  }
++  zOut = sqlite3_mprintf(Tcl_GetString(objv[1]),
++                         azArg[0], azArg[1], azArg[2], azArg[3]);
++  if( zOut==0 ){
++    Tcl_SetObjResult(interp, Tcl_NewStringObj("rejected", -1));
++  }else{
++    Tcl_SetObjResult(interp, Tcl_NewStringObj(zOut, -1));
++    sqlite3_free(zOut);
++  }
++  return TCL_OK;
++}
++
++#endif /* SQLITE_ENABLE_MATCHERTEXT */
++
++/*
++** Register the commands above with the TCL interpreter.  With the feature
++** disabled there is nothing to register and the scanner is not in the build,
++** so the commands are simply absent and the test script skips itself.
++*/
++int Sqlitetest_matchertext_Init(Tcl_Interp *interp){
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  static struct {
++    char *zName;
++    Tcl_ObjCmdProc *xProc;
++    void *pArg;
++  } aObjCmd[] = {
++    { "sqlite3_matchertext_verify", test_matchertext_verify, 0 },
++    { "sqlite3_matchertext_end",    test_matchertext_end,    0 },
++    { "sqlite3_matchertext_printf", test_matchertext_printf, 0 },
++    { "sqlite3_matchertext_encode", test_matchertext_recode, 0 },
++    { "sqlite3_matchertext_decode", test_matchertext_recode, (void*)1 },
++    { "sqlite3_matchertext_exec",   test_matchertext_exec, 0 },
++    { "sqlite3_matchertext_test_bypass", test_matchertext_bypass, 0 },
++  };
++  int i;
++  for(i=0; i<(int)(sizeof(aObjCmd)/sizeof(aObjCmd[0])); i++){
++    Tcl_CreateObjCommand(interp, aObjCmd[i].zName, aObjCmd[i].xProc,
++                         aObjCmd[i].pArg, 0);
++  }
++#endif
++  return TCL_OK;
++}
+diff --git a/src/test_tclsh.c b/src/test_tclsh.c
+index 989cb97a62..4d2567b87f 100644
+--- a/src/test_tclsh.c
++++ b/src/test_tclsh.c
+@@ -51,6 +51,9 @@ static int SQLITE_TCLAPI load_testfixture_extensions(
+ const char *sqlite3TestInit(Tcl_Interp *interp){
+   extern int Sqlite3_Init(Tcl_Interp*);
+   extern int Sqliteconfig_Init(Tcl_Interp*);
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  extern int Sqlitetest_matchertext_Init(Tcl_Interp*);
++#endif
+   extern int Sqlitetest1_Init(Tcl_Interp*);
+   extern int Sqlitetest2_Init(Tcl_Interp*);
+   extern int Sqlitetest3_Init(Tcl_Interp*);
+@@ -119,6 +122,9 @@ const char *sqlite3TestInit(Tcl_Interp *interp){
+   }
+ #ifdef SQLITE_ENABLE_ZIPVFS
+   Zipvfs_Init(interp);
++#endif
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  Sqlitetest_matchertext_Init(interp);
+ #endif
+   Md5_Init(interp);
+   Sqliteconfig_Init(interp);
+diff --git a/src/tokenize.c b/src/tokenize.c
+index fa9a5627d2..8f3bad9f42 100644
+--- a/src/tokenize.c
++++ b/src/tokenize.c
+@@ -497,9 +497,22 @@ i64 sqlite3GetToken(const unsigned char *z, int *tokenType){
+       return i;
+     }
+     case CC_QUOTE2: {
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++      i = sqlite3MatchertextEnd(z);
++      if( i>0 ){
++        *tokenType = TK_ID;
++        return i;
++      }
++
++      /* Consume everything for error parity */
++      for(i=1; z[i] && z[i]!=']'; i++){}
++      *tokenType = TK_ILLEGAL;
++      return i;
++#else
+       for(i=1, c=z[0]; c!=']' && (c=z[i])!=0; i++){}
+       *tokenType = c==']' ? TK_ID : TK_ILLEGAL;
+       return i;
++#endif
+     }
+     case CC_VARNUM: {
+       *tokenType = TK_VARIABLE;
+@@ -537,6 +550,16 @@ i64 sqlite3GetToken(const unsigned char *z, int *tokenType){
+       return i;
+     }
+     case CC_KYWD0: {
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++      /* Check for a matchertext M'(value)' literal. */
++      if( (z[0]|0x20)=='m' && z[1]=='\'' ){
++        i = sqlite3MatchertextEnd(z+2);
++        if( i>0 && z[2+i]=='\'' ){
++          *tokenType = TK_MTSTRING;
++          return i+3; /* Go past the ending )' chars */
++        }
++      }
++#endif
+       if( aiClass[z[1]]>CC_KYWD ){ i = 1;  break; }
+       for(i=2; aiClass[z[i]]<=CC_KYWD; i++){}
+       if( IdChar(z[i]) ){
+@@ -821,6 +844,9 @@ char *sqlite3Normalize(
+       case TK_INTEGER:
+       case TK_FLOAT:
+       case TK_VARIABLE:
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++      case TK_MTSTRING:
++#endif
+       case TK_BLOB: {
+         sqlite3_str_append(pStr, "?", 1);
+         break;
+diff --git a/src/util.c b/src/util.c
+index 32fe2309c7..d325cf1abe 100644
+--- a/src/util.c
++++ b/src/util.c
+@@ -306,8 +306,32 @@ void sqlite3Dequote(char *z){
+   char quote;
+   int i, j;
+   if( z==0 ) return;
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  if( (z[0]=='M' || z[0]=='m') && z[1]=='\'' ){
++    int n = sqlite3Strlen30(z);
++    if( n>=5 && z[n-1]=='\''
++     && sqlite3MatchertextEnd((const unsigned char*)(z+2))==(i64)(n-3)
++    ){
++      memmove(z, z+3, (size_t)(n-5));
++      z[n-5] = 0;
++      sqlite3MatchertextDecodeInPlace(z, (i64)(n-5), 1);
++      return;
++    }
++  }
++#endif
+   quote = z[0];
+   if( !sqlite3Isquote(quote) ) return;
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  if( quote=='[' ){
++    i = sqlite3Strlen30(z);
++    if( i>=2 && z[i-1]==']' && sqlite3MatchertextVerify((const unsigned char*)(z+1), (i64)(i-2)) ){
++      memmove(z, z+1, (size_t)(i-2));
++      z[i-2] = 0;
++      sqlite3MatchertextDecodeInPlace(z, (i64)(i-2), 0);
++      return;
++    }
++  }
++#endif
+   if( quote=='[' ) quote = ']';
+   for(i=1, j=0;; i++){
+     assert( z[i] );
+diff --git a/src/vacuum.c b/src/vacuum.c
+index 70e62e1ef1..b3fbb8c013 100644
+--- a/src/vacuum.c
++++ b/src/vacuum.c
+@@ -34,7 +34,13 @@ static int execSql(sqlite3 *db, char **pzErrMsg, const char *zSql){
+   int rc;
+ 
+   /* printf("SQL: [%s]\n", zSql); fflush(stdout); */
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  db->nMatchertextInternal++;
++#endif
+   rc = sqlite3_prepare_v2(db, zSql, -1, &pStmt, 0);
++#ifdef SQLITE_ENABLE_MATCHERTEXT
++  db->nMatchertextInternal--;
++#endif
+   if( rc!=SQLITE_OK ) return rc;
+   while( SQLITE_ROW==(rc = sqlite3_step(pStmt)) ){
+     const char *zSubSql = (const char*)sqlite3_column_text(pStmt,0);
+diff --git a/test/matchertext.test b/test/matchertext.test
+new file mode 100644
+index 0000000000..98afb990c9
+--- /dev/null
++++ b/test/matchertext.test
+@@ -0,0 +1,1319 @@
++# 2026 July 29
++#
++# The author disclaims copyright to this source code.  In place of
++# a legal notice, here is a blessing:
++#
++#    May you do good and not evil.
++#    May you find forgiveness for yourself and forgive others.
++#    May you share freely, never taking more than you give.
++#
++#***********************************************************************
++# Tests for the matchertext literal M'(value)' and the scanner behind it.
++#
++# The file is organized by layer, because a failure means something different
++# at each one:
++#
++#   matchertext-1  the scanner, VERIFY and FINDEMBEDEND called directly
++#   matchertext-2  the tokenizer, where a literal begins and ends
++#   matchertext-3  the parser, which positions accept the new terminal
++#   matchertext-4  the value, delivered verbatim as data
++#   matchertext-5  backward compatibility, text that parsed before
++#
++# The scanner tests come from a cross-language suite that checks the same C
++# code against an independent Go implementation.  That comparison stays where
++# it is, since it needs the other implementation; what moved here are the
++# cases whose expected answers are written out by hand and belong beside the
++# code they describe.
++#
++# Everything requires SQLITE_ENABLE_MATCHERTEXT.  Without it there is no
++# literal, no scanner, and no test commands, so the file skips itself.
++
++set testdir [file dirname $argv0]
++source $testdir/tester.tcl
++set testprefix matchertext
++
++ifcapable !matchertext {
++finish_test
++  return
++}
++
++#-------------------------------------------------------------------------
++# 1.*: The scanner on its own.
++#
++# VERIFY decides membership in the matchertext language.  It has no SQL
++# surface, since it belongs to the write path where a caller checks a value
++# before placing it in a hole, so these go through the test command.
++
++# 1.1: valid matchertext
++foreach {tn val} {
++  1  {}
++  2  {hello world}
++  3  {(a)}
++  4  {[a]}
++  5  {{a}}
++  6  {((a))}
++  7  {([{}])}
++  8  {a(b)c[d]e{f}g}
++  9  {()[]{}}
++} {
++  do_test 1.1.$tn { sqlite3_matchertext_verify $val } 1
++}
++
++# 1.2: angle brackets are not matchers, so they constrain nothing.  They are
++# used unmatched as inequality operators far too often to include.
++do_test 1.2.1 { sqlite3_matchertext_verify {a < b > c} } 1
++do_test 1.2.2 { sqlite3_matchertext_verify {a > b < c} } 1
++
++# 1.3: the payloads that motivate the exercise carry no matchers at all, so
++# they are ordinary matchertext.  Nothing about them is treated as special.
++do_test 1.3.1 { sqlite3_matchertext_verify {' OR '1'='1} } 1
++do_test 1.3.2 { sqlite3_matchertext_verify {x' OR 1=1 --} } 1
++do_test 1.3.3 { sqlite3_matchertext_verify {'; DROP TABLE users; --} } 1
++do_test 1.3.4 { sqlite3_matchertext_verify {<script>alert(1)</script>} } 1
++
++# 1.4: unmatched matchers, in either direction
++foreach {tn val} {
++  1  {(}
++  2  {)}
++  3  {)(}
++  4  {a)b}
++  5  {f(x}
++  6  {smile :]}
++} {
++  do_test 1.4.$tn { sqlite3_matchertext_verify $val } 0
++}
++
++# 1.5: paired, but with a closer of the wrong kind
++do_test 1.5.1 { sqlite3_matchertext_verify {(]} } 0
++do_test 1.5.2 { sqlite3_matchertext_verify {([)]} } 0
++do_test 1.5.3 { sqlite3_matchertext_verify {([a)]} } 0
++
++# 1.6: an LDAP filter breakout is rejected rather than embedded, which is the
++# other of the two ways containment can happen
++do_test 1.6.1 { sqlite3_matchertext_verify {*)(uid=*} } 0
++
++# 1.7: zero bytes are ordinary nonmatchers.  VERIFY takes an explicit length
++# for exactly this reason.
++do_test 1.7.1 {
++  sqlite3_matchertext_verify [binary format a1a1a3 "a" "\x00" "(b)"]
++} 1
++do_test 1.7.2 {
++  sqlite3_matchertext_verify [binary format a1a1a2 "a" "\x00" "(b"]
++} 0
++
++# 1.8: multi-byte UTF-8 is scanned safely, because every byte of a multi-byte
++# sequence is at or above 0x80 and no matcher is
++do_test 1.8.1 { sqlite3_matchertext_verify "caf\xc3\xa9 (na\xc3\xafve)" } 1
++do_test 1.8.2 { sqlite3_matchertext_verify "caf\xc3\xa9 (na\xc3\xafve" } 0
++
++# 1.9: U+FF3B FULLWIDTH LEFT SQUARE BRACKET is not an ASCII matcher and so
++# passes.  It normalizes to a lone "[" under NFKC.  The caller must therefore
++# present the value already canonicalized; this records the boundary of what
++# the scanner can be responsible for.
++do_test 1.9.1 { sqlite3_matchertext_verify "\xef\xbc\xbb" } 1
++
++# 1.10: FINDEMBEDEND locates the closer by balance.  The result counts both
++# delimiters, so the value is the result minus two.
++foreach {tn text res} {
++  1   {()}              2
++  2   {(a)}             3
++  3   {((a))}           5
++  4   {[a]}             3
++  5   {{a}}             3
++  6   {([{}])}          6
++  7   {(a)bcd}          3
++  8   {(a)'}            3
++} {
++  do_test 1.10.$tn { sqlite3_matchertext_end $text } $res
++}
++
++# 1.11: the value may hold anything at all, including the host's own
++# terminators, because the end is found by balance and not by scanning
++do_test 1.11.1 { sqlite3_matchertext_end {(' OR '1'='1)} } 13
++do_test 1.11.2 { sqlite3_matchertext_end {('; DROP TABLE t; --)} } 21
++
++# 1.12: the first closer not matched from within ends the embedding, so a
++# later one lies outside it
++do_test 1.12.1 { sqlite3_matchertext_end {(a)b)} } 3
++
++# 1.13: rejections.  Each fails closed: no embedding ends here.
++#
++# Written with quoted strings rather than braces, because several of these
++# values carry an unmatched brace and so cannot be brace quoted in TCL.
++foreach {tn text} [list \
++  1  "(a]b)"   \
++  2  "(\}"     \
++  3  "(abc"    \
++  4  "(a(b"    \
++  5  "(\[)\]"  \
++  6  "("       \
++  7  "abc"     \
++  8  ")a("     \
++  9  ""        \
++] {
++  do_test 1.13.$tn { sqlite3_matchertext_end $text } 0
++}
++
++# 1.14: the depth limit.  Input nested more deeply is rejected rather than
++# truncated or accepted, so the failure stays closed.
++#
++# The budget is spent on the region actually scanned.  VERIFY sees the whole
++# string and counts every level.  FINDEMBEDEND begins one byte past the
++# opener, since the caller has already consumed that delimiter, so an
++# embedding whose value sits at the limit has total nesting of limit+1.
++set MTDEPTH 1000
++proc mt_nest {d} { return "[string repeat ( $d][string repeat ) $d]" }
++
++do_test 1.14.1 { sqlite3_matchertext_verify [mt_nest $MTDEPTH] } 1
++do_test 1.14.2 { sqlite3_matchertext_verify [mt_nest [expr $MTDEPTH+1]] } 0
++do_test 1.14.3 {
++  sqlite3_matchertext_end [mt_nest [expr $MTDEPTH+1]]
++} [expr 2*($MTDEPTH+1)]
++do_test 1.14.4 {
++  sqlite3_matchertext_end [mt_nest [expr $MTDEPTH+2]]
++} 0
++
++#-------------------------------------------------------------------------
++# 2.*: The tokenizer.
++#
++# A literal is M, a quote, a balanced embedding, and a quote.  What matters is
++# where the token ends, since that is the boundary an attacker would have to
++# escape.
++
++# 2.1: the literal is one token, and what follows it is separate
++do_test 2.1.1 { execsql {SELECT M'(abc)'} } {abc}
++do_test 2.1.2 { execsql {SELECT M'(abc)' || 'def'} } {abcdef}
++do_test 2.1.3 { execsql {SELECT M'(a)', M'(b)'} } {a b}
++
++# 2.2: the prefix is case insensitive, matching every other keyword
++do_test 2.2.1 { execsql {SELECT m'(abc)'} } {abc}
++do_test 2.2.2 { execsql {SELECT M'(abc)' = m'(abc)'} } {1}
++
++# 2.3: all three matcher pairs delimit
++do_test 2.3.1 { execsql {SELECT M'(abc)'} } {abc}
++do_test 2.3.2 { execsql {SELECT M'[abc]'} } {abc}
++do_test 2.3.3 { execsql {SELECT M'{abc}'} } {abc}
++
++# 2.4: an empty value is a value
++do_test 2.4.1 { execsql {SELECT M'()' = ''} } {1}
++do_test 2.4.2 { execsql {SELECT length(M'()')} } {0}
++
++# 2.5: the boundary is matcher balance, not the next quote.  These are the
++# cases the whole design exists for: a quote inside the value does not end it.
++do_test 2.5.1 { execsql {SELECT M'(' OR '1'='1)'} } [list {' OR '1'='1}]
++do_test 2.5.2 { execsql {SELECT M'(it's)'} } {it's}
++do_test 2.5.3 { execsql {SELECT M'(--)'} } {--}
++do_test 2.5.4 { execsql {SELECT M'(;)'} } [list {;}]
++do_test 2.5.5 { execsql {SELECT M'(/* not a comment */)'} } {/* not a comment */}
++
++# 2.6: nesting, to a few levels and across pairs
++do_test 2.6.1 { execsql {SELECT M'((a))'} } {(a)}
++do_test 2.6.2 { execsql {SELECT M'(a(b(c)d)e)'} } {a(b(c)d)e}
++do_test 2.6.3 { execsql {SELECT M'([{}])'} } [list "\[{}\]"]
++
++# 2.7: an ill-formed literal is not a literal.  The tokenizer falls through
++# and lexes the M as the identifier it has always been, so these fail the way
++# an unknown column does rather than as a new class of error.
++foreach {tn sql} {
++  1  {SELECT M'(unbalanced'}
++  2  {SELECT M'(a]b)'}
++  3  {SELECT M'(a)b)'}
++  4  {SELECT M'abc'}
++} {
++  do_catchsql_test 2.7.$tn $sql {1 {no such column: M}}
++}
++
++# 2.8: the M must abut the quote.  With a space between them this is the
++# old reading, an identifier followed by a string, and not a literal.
++do_test 2.8.1 { execsql {SELECT M'(abc)'} } {abc}
++do_catchsql_test 2.8.2 {
++  SELECT M '(abc)'
++} {1 {no such column: M}}
++
++#-------------------------------------------------------------------------
++# 3.*: The parser.
++#
++# The terminal appears in one rule and produces a leaf.  No production reads
++# structure out of the value, and the literal is not admitted where a name is
++# expected.
++
++# 3.1: a literal is a term, so it composes like any other constant
++do_test 3.1.1 { execsql {SELECT M'(a)' || M'(b)'} } {ab}
++do_test 3.1.2 { execsql {SELECT upper(M'(abc)')} } {ABC}
++do_test 3.1.3 { execsql {SELECT CASE M'(a)' WHEN 'a' THEN 'yes' END} } {yes}
++do_test 3.1.4 { execsql {SELECT M'(a)' IN ('a','b')} } {1}
++do_test 3.1.5 { execsql {SELECT coalesce(NULL, M'(a)')} } {a}
++
++# 3.2: it is a string, not a number or a name
++do_test 3.2.1 { execsql {SELECT typeof(M'(123)')} } {text}
++do_test 3.2.2 { execsql {SELECT M'(123)' + 1} } {124}   ;# by affinity, as '123'+1
++
++#-------------------------------------------------------------------------
++# 4.*: The value.
++#
++# What sits between the delimiters is delivered as data.  One decoding pass
++# runs over it, for the matchertext escape alphabet only: \\ is a backslash,
++# and \o() \c() \o[] \c[] \o{} \c{} are the six matchers, so a value that
++# could not embed verbatim can still be written.  SQL's own escaping never
++# applies: quotes do not double, and a backslash sequence that does not
++# spell one of the seven escapes passes through byte for byte.
++
++do_execsql_test 4.0 {
++  CREATE TABLE t1(name TEXT);
++  INSERT INTO t1 VALUES('alice'), ('bob');
++}
++
++# 4.1: no dequoting.  An ordinary literal collapses a doubled quote; a
++# matchertext literal does not, because there is no escaping inside one.
++do_test 4.1.1 { execsql {SELECT M'(it''s)'} } {it''s}
++do_test 4.1.2 { execsql {SELECT length(M'(it''s)')} } {5}
++do_test 4.1.3 { execsql {SELECT 'it''s'} } {it's}
++do_test 4.1.4 { execsql {SELECT length('it''s')} } {4}
++
++# 4.2: a backslash that does not introduce an escape is an ordinary byte
++do_test 4.2.1 { execsql {SELECT M'(a\nb)'} } [list {a\nb}]
++
++# 4.2.2+: the escape alphabet decodes.  A doubled backslash is one
++# backslash, and an escaped matcher is the matcher, which is how a value
++# carrying an unmatched matcher is written at all.
++do_test 4.2.2 { execsql {SELECT M'(a\\b)'} } [list {a\b}]
++do_test 4.2.3 { execsql {SELECT M'(\o())'} } {(}
++do_test 4.2.4 { execsql {SELECT M'(smile :\c[])'} } {{smile :]}}
++do_test 4.2.5 { execsql {SELECT length(M'(\o{})')} } {1}
++# A malformed escape is not an escape: the pair must be real and adjacent
++do_test 4.2.6 { execsql {SELECT M'(\o(x))'} } [list {\o(x)}]
++
++# 4.3: the value reaches the database and comes back unchanged
++do_test 4.3.1 {
++  execsql {
++    DELETE FROM t1;
++    INSERT INTO t1 VALUES(M'(' OR '1'='1)');
++    SELECT name FROM t1;
++  }
++} [list {' OR '1'='1}]
++
++# 4.4: and it is inert at the sink.  The canonical injection selects nothing,
++# because it is compared as data rather than read as syntax.
++do_execsql_test 4.4.0 {
++  DELETE FROM t1;
++  INSERT INTO t1 VALUES('alice'), ('bob');
++}
++do_test 4.4.1 {
++  execsql {SELECT count(*) FROM t1 WHERE name = M'(' OR '1'='1)'}
++} {0}
++do_test 4.4.2 {
++  execsql {SELECT count(*) FROM t1 WHERE name = M'(alice)'}
++} {1}
++
++# 4.5: the parse does not depend on what the value contains.  The bytecode of
++# the same statement is identical for every payload, apart from the slot that
++# holds the string.
++#
++# mt_skeleton drops the P4 operand, which is the only place the value may
++# appear, and compares everything else.
++proc mt_skeleton {sql payload} {
++  set out [list]
++  foreach {addr opcode p1 p2 p3 p4 p5 comment} \
++      [execsql [string map [list %V% "M'($payload)'"] $sql]] {
++    lappend out $addr $opcode $p1 $p2 $p3 $p5
++  }
++  return $out
++}
++
++set mt_payloads {
++  1  {' OR '1'='1}
++  2  {x'; DROP TABLE t1; --}
++  3  {%_ [] {} ()}
++  4  {UNION ALL SELECT * FROM sqlite_schema}
++  5  {a'||(SELECT group_concat(name) FROM sqlite_schema)||'b}
++  6  {"dq" `bt` [br] {br}}
++  7  {}
++  8  {/* comment */ -- line}
++}
++
++# Four query shapes, so the result does not rest on one statement kind.
++set mt_hosts {
++  select   {EXPLAIN SELECT * FROM t1 WHERE name = %V%}
++  insert   {EXPLAIN INSERT INTO t1(name) VALUES(%V%)}
++  like     {EXPLAIN SELECT * FROM t1 WHERE name LIKE %V%}
++  ordering {EXPLAIN SELECT %V% AS c FROM t1 ORDER BY 1}
++}
++
++foreach {host sql} $mt_hosts {
++  set mt_base [mt_skeleton $sql {alice}]
++  foreach {tn payload} $mt_payloads {
++    do_test 4.5.$host.$tn { mt_skeleton $sql $payload } $mt_base
++  }
++}
++
++#-------------------------------------------------------------------------
++# 6.*: The rewriting paths.
++#
++# Several places in SQLite take a token out of the SQL text and dequote it,
++# collapsing doubled quotes. None may reach a matchertext value, because a
++# value legitimately begins with a quote and would be silently rewritten.
++#
++# The separation is structural rather than lucky. Seven of the eight callers
++# of sqlite3Dequote() take their token from a rule in an identifier position,
++# nm, ids or typetoken, and MTSTRING appears only in term. The eighth switches
++# on TK_ID. The tests below pin that: each drives a value beginning with a
++# quote through a path that dequotes an ordinary token, and checks the bytes
++# come back whole.
++
++do_execsql_test 6.0 {
++  CREATE TABLE t6(a TEXT, b TEXT);
++}
++
++# 6.1: a value that begins and ends with a quote survives insertion and
++# retrieval untouched.  Under sqlite3Dequote() the leading quote would be read
++# as a delimiter and the value would lose characters.
++do_test 6.1.1 {
++  execsql {
++    DELETE FROM t6;
++    INSERT INTO t6(a) VALUES(M'('quoted')');
++    SELECT a, length(a) FROM t6;
++  }
++} [list {'quoted'} 8]
++
++# 6.2: doubled quotes stay doubled.  This is the case that separates a
++# matchertext value from an ordinary literal, where '' means one quote.
++do_test 6.2.1 {
++  execsql {SELECT M'(a''b)', length(M'(a''b)')}
++} [list {a''b} 4]
++
++# 6.3: through a column alias, which is where sqlite3ExprListSetName() would
++# dequote an ordinary token
++do_test 6.3.1 {
++  execsql {SELECT M'('x')' AS c}
++} [list {'x'}]
++
++# 6.4: through a DEFAULT clause, stored in the schema and re-parsed on the
++# next open.  This exercises the round trip the L3 claim depends on.
++do_test 6.4.1 {
++  execsql {
++    CREATE TABLE t6b(x TEXT DEFAULT (M'('d')'));
++    INSERT INTO t6b DEFAULT VALUES;
++    SELECT x FROM t6b;
++  }
++} [list {'d'}]
++do_test 6.4.2 {
++  db close
++  sqlite3 db test.db
++  execsql {
++    INSERT INTO t6b DEFAULT VALUES;
++    SELECT DISTINCT x FROM t6b;
++  }
++} [list {'d'}]
++
++# 6.5: through a view, whose text is stored and re-parsed
++do_test 6.5.1 {
++  execsql {
++    CREATE VIEW v6 AS SELECT M'(' OR '1'='1)' AS payload;
++    SELECT payload FROM v6;
++  }
++} [list {' OR '1'='1}]
++do_test 6.5.2 {
++  db close
++  sqlite3 db test.db
++  execsql {SELECT payload FROM v6}
++} [list {' OR '1'='1}]
++
++# 6.6: normalization.  sqlite3_normalized_sql() exists to be safe to log, so
++# every literal must reduce to a question mark.  A matchertext literal that
++# fell through to the default branch would be copied out verbatim, and folded
++# to upper case on the way, putting an attacker-controlled value into the log.
++ifcapable normalize {
++  do_test 6.6.1 {
++    set stmt [sqlite3_prepare_v2 db {SELECT * FROM t6 WHERE a = M'(secret)'} -1 tail]
++    set res [sqlite3_normalized_sql $stmt]
++    sqlite3_finalize $stmt
++    set res
++  } {SELECT*FROM t6 WHERE a=?;}
++
++  # The same statement with an ordinary literal normalizes identically, which
++  # is the property worth having: the two literal forms are indistinguishable
++  # once the value is gone.
++  do_test 6.6.2 {
++    set stmt [sqlite3_prepare_v2 db {SELECT * FROM t6 WHERE a = 'secret'} -1 tail]
++    set res [sqlite3_normalized_sql $stmt]
++    sqlite3_finalize $stmt
++    set res
++  } {SELECT*FROM t6 WHERE a=?;}
++}
++
++#-------------------------------------------------------------------------
++# 7.*: The name hole, [...].
++#
++# SQLite already delimits identifiers with a matcher pair. The only change is
++# that the reader ends the name by balance instead of at the first ']', which
++# is premise A1 for this position with no new syntax at all.
++#
++# Strict: an unbalanced interior is an error, not a fall back to the old scan.
++
++# 7.1: ordinary bracketed identifiers are unaffected
++do_execsql_test 7.1.1 {
++  CREATE TABLE [t7](x);
++  INSERT INTO [t7] VALUES(1);
++  SELECT x FROM [t7];
++} {1}
++do_execsql_test 7.1.2 {
++  CREATE TABLE [two words](y);
++  SELECT count(*) FROM [two words];
++} {0}
++
++# 7.2: nesting now works, and the name is exactly the interior
++do_execsql_test 7.2.1 {
++  CREATE TABLE [a[b]c](z);
++  INSERT INTO [a[b]c] VALUES(2);
++  SELECT z FROM [a[b]c];
++} {2}
++do_test 7.2.2 {
++  execsql {SELECT name FROM sqlite_schema WHERE name LIKE 'a%c'}
++} [list {a[b]c}]
++do_execsql_test 7.2.3 {
++  CREATE TABLE [x([{}])y](w);
++  SELECT count(*) FROM [x([{}])y];
++} {0}
++
++# 7.3: the name may hold what a name never could.  The six matcher escapes
++# decode in the interior; every other byte, backslash included, is taken
++# verbatim.
++do_test 7.3.1 {
++  execsql {CREATE TABLE [it's ; -- ok](v)}
++  execsql {SELECT name FROM sqlite_schema WHERE name LIKE 'it%'}
++} [list {it's ; -- ok}]
++
++# 7.4: strict.  An unmatched bracket is an error.
++#
++# 7.4.1 is the compatibility cost: [a[b] names the column a[b] today and does
++# not parse here. 7.4.2 was already an error before the change.
++do_catchsql_test 7.4.1 {
++  SELECT 1 FROM [a[b]
++} {1 {unrecognized token: "[a[b"}}
++do_catchsql_test 7.4.2 {
++  SELECT 1 FROM [a]b]
++} {1 {unrecognized token: "]"}}
++do_catchsql_test 7.4.3 {
++  SELECT 1 FROM [a)b]
++} {1 {unrecognized token: "[a)b"}}
++
++# 7.5: it is a name, not a value.  The two holes stay disjoint: a bracketed
++# form resolves as a column reference, never as a string constant.
++do_catchsql_test 7.5.1 {
++  SELECT [nosuchcolumn]
++} {1 {no such column: nosuchcolumn}}
++
++# 7.6: usable wherever a name goes, including an alias and a column reference
++do_execsql_test 7.6.1 {
++  SELECT z AS [al[ia]s] FROM [a[b]c];
++} {2}
++do_execsql_test 7.6.2 {
++  CREATE TABLE [t7b]([c[0]], [c[1]]);
++  INSERT INTO [t7b] VALUES(10, 20);
++  SELECT [c[0]] + [c[1]] FROM [t7b];
++} {30}
++
++# 7.7: the name survives the schema round trip, which is where a rewriting
++# path would show up
++do_execsql_test 7.7.1 {
++  CREATE VIEW [v[7]] AS SELECT z FROM [a[b]c];
++  SELECT z FROM [v[7]];
++} {2}
++do_test 7.7.2 {
++  db close
++  sqlite3 db test.db
++  execsql {SELECT z FROM [v[7]]}
++} {2}
++
++# 7.8: the six matcher escapes decode inside a bracketed name, so a name
++# carrying an unmatched matcher can be written into the hole.  Nothing else
++# decodes there: a backslash is an ordinary byte in a name, as it always
++# was, so [e\\f] names e\\f here exactly as in stock SQLite.
++#
++# The one spelling whose meaning changes is a name that itself contains a
++# valid matcher escape, recorded at 7.8.3 the way 7.4.1 records the
++# unbalanced-bracket cost: stock SQLite reads [g\o()h] as the name g\o()h,
++# and here it is the name g(h.
++do_test 7.8.1 {
++  execsql "CREATE TABLE \[e\\\\f\](x); INSERT INTO \[e\\\\f\] VALUES(8)"
++  execsql {SELECT name FROM sqlite_schema WHERE name LIKE 'e%f'}
++} [list "e\\\\f"]
++do_test 7.8.2 {
++  execsql "SELECT x FROM \[e\\\\f\]"
++} {8}
++do_test 7.8.3 {
++  execsql "CREATE TABLE \[g\\o()h\](y)"
++  execsql {SELECT name FROM sqlite_schema WHERE name LIKE 'g%h'}
++} [list {g(h}]
++do_test 7.8.4 {
++  execsql {SELECT count(*) FROM [g\o()h]}
++} {0}
++# The decoded name cannot be spelled verbatim, since its bracket is
++# unmatched; the escaped spelling is the only one, which is the point of
++# having it.
++do_catchsql_test 7.8.5 {
++  SELECT count(*) FROM [g(h]
++} {1 {unrecognized token: "[g(h"}}
++
++#-------------------------------------------------------------------------
++# 8.*: L2 against the double-quoted string misfeature.
++#
++# DQS reinterprets a double-quoted token as a string literal when it fails to
++# resolve as an identifier, so one token means a name or a value depending on
++# the schema. It stays enabled here, at SQLite's default, because neither hole
++# can reach it: resolve.c gates the fallback on EP_DblQuoted, and util.c sets
++# that flag only when the token begins with '"'.
++
++do_execsql_test 8.0 {
++  CREATE TABLE t8(a);
++  INSERT INTO t8 VALUES('zzz');
++}
++
++# 8.1: the misfeature is present and on, so what follows is measured against
++# the real thing rather than a build with it disabled
++do_execsql_test 8.1.1 {
++  SELECT "nosuchcolumn"
++} {nosuchcolumn}
++do_execsql_test 8.1.2 {
++  SELECT count(*) FROM t8 WHERE a = "zzz"
++} {1}
++
++# 8.2: the value hole is never resolved as a name.  "a" is a real column, so
++# DQS is not even needed to make it one; the matchertext form is still a
++# string, which is what makes the reading of the hole unconditional.
++do_execsql_test 8.2.1 {
++  SELECT M'(a)'
++} {a}
++do_execsql_test 8.2.2 {
++  SELECT count(*) FROM t8 WHERE a = M'(zzz)'
++} {1}
++do_execsql_test 8.2.3 {
++  SELECT count(*) FROM t8 WHERE a = M'(a)'
++} {0}
++
++# 8.3: the name hole is never reinterpreted as a value.  [...] does not set
++# EP_DblQuoted, so an unresolvable bracketed identifier is an error even with
++# DQS on, where the double-quoted spelling would have become a string.
++do_catchsql_test 8.3.1 {
++  SELECT [nosuchcolumn]
++} {1 {no such column: nosuchcolumn}}
++do_execsql_test 8.3.2 {
++  SELECT [a] FROM t8
++} {zzz}
++
++# 8.4: the same holds with DQS turned on explicitly at run time, which is the
++# setting the compile-time default cannot control
++do_test 8.4.1 {
++  sqlite3_db_config db DQS_DML 1
++  sqlite3_db_config db DQS_DDL 1
++  execsql {SELECT "nosuchcolumn"}
++} {nosuchcolumn}
++do_catchsql_test 8.4.2 {
++  SELECT [nosuchcolumn]
++} {1 {no such column: nosuchcolumn}}
++do_execsql_test 8.4.3 {
++  SELECT M'(nosuchcolumn)'
++} {nosuchcolumn}
++
++#-------------------------------------------------------------------------
++# 5.*: Backward compatibility.
++#
++# The extension is meant to be conservative: text that parses today must
++# still parse, and only a balanced M'(...)' may acquire a new meaning.
++
++do_execsql_test 5.0 {
++  CREATE TABLE M(x);
++  INSERT INTO M VALUES(42);
++}
++
++# 5.1: M is still an ordinary identifier, including as a table name followed
++# with no space by a quoted alias
++do_test 5.1.1 { execsql {SELECT x FROM M} } {42}
++do_test 5.1.2 { execsql {SELECT x FROM M'abc'} } {42}
++do_test 5.1.3 { execsql {SELECT x FROM M 'abc'} } {42}
++
++# 5.2: and as a column name, a function argument, and a keyword prefix
++do_test 5.2.1 { execsql {SELECT M.x FROM M} } {42}
++do_test 5.2.2 { execsql {SELECT count(M.x) FROM M} } {1}
++do_test 5.2.3 {
++  execsql {WITH c AS MATERIALIZED (SELECT 7 AS v) SELECT v FROM c}
++} {7}
++
++# 5.3: ordinary string literals are untouched
++do_test 5.3.1 { execsql {SELECT '(abc)'} } {(abc)}
++do_test 5.3.2 { execsql {SELECT 'M'} } {M}
++
++# 5.4: the one case that does change meaning, recorded so the cost is
++# explicit rather than discovered.  Before the extension this named table M
++# with the alias (x); now it is a literal, which is not valid in that
++# position.  It needs a table or column named M followed with no space by a
++# quoted alias whose first character opens a matcher.
++do_catchsql_test 5.4.1 {
++  SELECT x FROM M'(nosuchtable2)'
++} {1 {near "M'(nosuchtable2)'": syntax error}}
++
++#-------------------------------------------------------------------------
++# 9.*: Re-parsing.
++#
++# SQLite stores the text of views and triggers in the schema and parses it
++# again on the next open, and ALTER TABLE rewrites that text in place. So the
++# question is not whether a value is ever re-parsed, it is whether it comes
++# back byte for byte when it is.
++
++do_execsql_test 9.0 {
++  CREATE TABLE t9(name);
++  CREATE TABLE log9(v);
++  INSERT INTO t9 VALUES('alice');
++}
++
++# 9.1: inside a trigger body, which is stored as text and re-parsed
++do_test 9.1.1 {
++  execsql {
++    CREATE TRIGGER tr9 AFTER INSERT ON t9 BEGIN
++      INSERT INTO log9 VALUES(M'(' OR '1'='1)');
++    END;
++    INSERT INTO t9 VALUES('bob');
++    SELECT v FROM log9;
++  }
++} [list {' OR '1'='1}]
++do_test 9.1.2 {
++  db close
++  sqlite3 db test.db
++  execsql {
++    DELETE FROM log9;
++    INSERT INTO t9 VALUES('carol');
++    SELECT v FROM log9;
++  }
++} [list {' OR '1'='1}]
++
++# 9.2: ALTER TABLE RENAME rewrites the stored text of a view.  The table name
++# must change and the value must not.
++#
++# The value holds double quotes on purpose. renameQuotefixExprCb() in alter.c
++# rewrites double-quoted string literals to single-quoted ones, and it fires on
++# TK_STRING carrying EP_DblQuoted. A matchertext literal never carries that
++# flag, so the value is left alone.
++do_execsql_test 9.2.1 {
++  CREATE VIEW v9 AS SELECT name, M'("q" ; --)' AS tag FROM t9;
++  SELECT DISTINCT tag FROM v9;
++} {{"q" ; --}}
++do_test 9.2.2 {
++  execsql {ALTER TABLE t9 RENAME TO t9b}
++  execsql {SELECT sql FROM sqlite_schema WHERE name='v9'}
++} [list {CREATE VIEW v9 AS SELECT name, M'("q" ; --)' AS tag FROM "t9b"}]
++do_execsql_test 9.2.3 {
++  SELECT DISTINCT tag FROM v9;
++} {{"q" ; --}}
++do_test 9.2.4 {
++  db close
++  sqlite3 db test.db
++  execsql {SELECT DISTINCT tag FROM v9}
++} [list {"q" ; --}]
++
++# 9.3: sqlite3_expanded_sql() re-serializes a statement.  A bound parameter is
++# substituted; a matchertext literal is passed through unchanged, because it is
++# not a parameter.
++#
++# The output is therefore only valid input to a parser that knows the literal.
++# Given to a build without SQLITE_ENABLE_MATCHERTEXT it would re-lex as an
++# identifier followed by a different string. That is a scope limit on any tool
++# which captures expanded SQL and replays it, not a defect here.
++do_test 9.3.1 {
++  set stmt [sqlite3_prepare_v2 db {
++    SELECT * FROM t9b WHERE name = M'(' OR '1'='1)' AND name = ?
++  } -1 tail]
++  sqlite3_bind_text $stmt 1 {b'c} 3
++  set res [sqlite3_expanded_sql $stmt]
++  sqlite3_finalize $stmt
++  string match {*M'(' OR '1'='1)'*} $res
++} 1
++do_test 9.3.2 {
++  set stmt [sqlite3_prepare_v2 db {SELECT ?, M'(x)'} -1 tail]
++  sqlite3_bind_text $stmt 1 {y} 1
++  set res [sqlite3_expanded_sql $stmt]
++  sqlite3_finalize $stmt
++  set res
++} {SELECT 'y', M'(x)'}
++
++#-------------------------------------------------------------------------
++# 10.*: The write path, %m and VERIFY.
++#
++# Both concern the content of one literal and nothing outside it:
++#
++#   %m  the whole content, encoded and wrapped as M'(...)'.  Encoding is
++#       total, so this conversion never refuses a value.
++#   VERIFY checks content that a caller wants to emit verbatim. What cannot
++#       embed as it stands is refused before statement construction.
++#
++# %m is the ordinary route for a free-form value.
++
++# 10.1: %m wraps content that is already matchertext, quotes and all
++foreach {tn val out} {
++  1  {alice}                 {WHERE n = M'(alice)'}
++  2  {' OR '1'='1}           {WHERE n = M'(' OR '1'='1)'}
++  3  {x'; DROP TABLE t; --}  {WHERE n = M'(x'; DROP TABLE t; --)'}
++  4  {f(x) [y] {z}}          {WHERE n = M'(f(x) [y] {z})'}
++  5  {}                      {WHERE n = M'()'}
++} {
++  do_test 10.1.$tn { sqlite3_matchertext_printf {WHERE n = %m} $val } $out
++}
++
++# 10.2: content that could not embed verbatim is escaped, not refused.  Only
++# the unmatched matchers change; everything else is left as it was.
++foreach {tn val out} {
++  1  {x) OR 1=1 --}  {WHERE n = M'(x\c() OR 1=1 --)'}
++  2  {f(x}           {WHERE n = M'(f\o()x)'}
++  3  {(a]}           {WHERE n = M'(\o()a\c[])'}
++  4  {smile :]}      {WHERE n = M'(smile :\c[])'}
++  5  {)(}            {WHERE n = M'(\c()\o())'}
++} {
++  do_test 10.2.$tn { sqlite3_matchertext_printf {WHERE n = %m} $val } $out
++}
++
++# 10.3: the caller's own text inside the literal is encoded on the same
++# terms, so an unbalanced '[' in a message is escaped rather than fatal
++do_test 10.3.1 {
++  sqlite3_matchertext_printf {VALUES(%m)} {Hi user, x welcome !}
++} {VALUES(M'(Hi user, x welcome !)')}
++do_test 10.3.2 {
++  sqlite3_matchertext_printf {VALUES(%m)} {Hi user, x welcome ![}
++} {VALUES(M'(Hi user, x welcome !\o[])')}
++
++# 10.4: nothing outside the literal is inspected.  An unbalanced matcher
++# elsewhere in the statement is the caller's business: it cannot let a value
++# escape its own hole.
++do_test 10.4.1 {
++  sqlite3_matchertext_printf {SELECT ')' FROM t WHERE n=%m} v
++} {SELECT ')' FROM t WHERE n=M'(v)'}
++do_test 10.4.2 {
++  sqlite3_matchertext_printf {SELECT ( FROM t WHERE n=%m} v
++} {SELECT ( FROM t WHERE n=M'(v)'}
++
++# 10.5: VERIFY accepts content that can be emitted verbatim and refuses an
++# unmatched matcher before statement construction.
++do_test 10.5.1 { sqlite3_matchertext_verify {x} } 1
++do_test 10.5.2 { sqlite3_matchertext_verify {[a]} } 1
++do_test 10.5.3 { sqlite3_matchertext_verify {x]y} } 0
++do_test 10.5.4 { sqlite3_matchertext_verify {' OR '1'='1} } 1
++do_test 10.5.5 { sqlite3_matchertext_verify "a\\b" } 1
++
++# 10.7: several holes
++do_test 10.7.1 {
++  sqlite3_matchertext_printf {WHERE a=%m AND b=%m} {p'q} {r(s)}
++} {WHERE a=M'(p'q)' AND b=M'(r(s))'}
++do_test 10.7.2 {
++  sqlite3_matchertext_printf {WHERE a=%m AND b=%m} {p'q} {r)s}
++} {WHERE a=M'(p'q)' AND b=M'(r\c()s)'}
++# 10.8: a NULL value is SQL NULL, as %Q does
++do_test 10.8.1 { sqlite3_matchertext_printf {WHERE n = %m} } {WHERE n = NULL}
++
++# 10.9: the other conversions are untouched
++# The three escaping conversions are unchanged, and deliberately so.  Each
++# doubles the delimiter its own context uses, which is correct only while the
++# caller puts the result in that context.
++do_test 10.9.1 {
++  sqlite3_matchertext_printf {%q | %Q | %w} {a'b} {c'd} {e"f}
++} {a''b | 'c''d' | e""f}
++
++# The contrast with %m, and the reason they were left alone.  An unmatched
++# matcher passes straight through all three: it is not a delimiter of theirs,
++# so there is nothing for them to double.  Containment there rests entirely on
++# the caller having chosen the conversion that matches the sink.
++do_test 10.9.2 {
++  sqlite3_matchertext_printf {%q | %Q | %w} {a]b} {c]d} {e]f}
++} {a]b | 'c]d' | e]f}
++
++# %m does not depend on that choice.  It escapes for the one discipline the
++# sink reads, not for a context it was never told about.
++do_test 10.9.3 {
++  sqlite3_matchertext_printf {%m} {c]d}
++} {M'(c\c[]d)'}
++
++# 10.10: what %m produces parses, and the value stays data.  The last two
++# cases could not embed verbatim, so they exercise the encoder end to end:
++# what the reader recovers is the value the caller passed.
++do_execsql_test 10.10.0 {
++  CREATE TABLE t10(n);
++  INSERT INTO t10 VALUES('alice'), ('bob');
++}
++foreach {tn val cnt} {
++  1  {alice}                  1
++  2  {' OR '1'='1}            0
++  3  {x'; DROP TABLE t10; --} 0
++  4  {p'q}                    0
++  5  {smile :]}               0
++  6  {x) OR 1=1 --}           0
++} {
++  do_test 10.10.$tn {
++    execsql [sqlite3_matchertext_printf \
++        {SELECT count(*) FROM t10 WHERE n = %m} $val]
++  } $cnt
++}
++do_execsql_test 10.10.9 { SELECT count(*) FROM t10; } {2}
++
++# 10.11: the round trip through %m is exact for any value at all.  The
++# reader decodes, so the writer escapes backslashes too, which is what makes
++# a value that already looks like an escape survive as itself.
++foreach {tn val} {
++  1  {a\b}
++  2  {\o()}
++  3  {smile :]}
++  4  {printf("[")}
++  5  {' OR '1'='1}
++  6  {}
++} {
++  do_test 10.11.$tn {
++    execsql [sqlite3_matchertext_printf {SELECT %m} $val]
++  } [list $val]
++}
++
++# What that costs in the SQL text: the escaped spelling, which is longer
++do_test 10.11.7 {
++  sqlite3_matchertext_printf {%m} "a\\b"
++} "M'(a\\\\b)'"
++
++# 10.12: the public encoder and its inverse, the same routines %m uses,
++# for a caller placing a value in a hole itself
++do_test 10.12.1 { sqlite3_matchertext_encode {smile :]} } {smile :\c[]}
++do_test 10.12.2 { sqlite3_matchertext_decode {smile :\c[]} } {smile :]}
++do_test 10.12.3 { sqlite3_matchertext_verify [sqlite3_matchertext_encode {f(x}] } 1
++do_test 10.12.4 {
++  sqlite3_matchertext_decode [sqlite3_matchertext_encode {a\o()b}]
++} {a\o()b}
++do_test 10.12.5 { sqlite3_matchertext_encode {} } {}
++
++#-------------------------------------------------------------------------
++# 11.*: Checked SQL entry and typed composition.
++#
++# External SQL enters through sqlite3_matchertext_prepare_v3(). The test command
++# below prepares and steps the statement. The template uses ?V for a bound text
++# value and ?I for a delimited identifier. Each input is checked before
++# composition.
++
++db close
++forcedelete test11.db
++sqlite3_matchertext_test_bypass 0
++sqlite3 db test11.db
++
++# Matchertext changes SQL input handling, not the SQLite file format.
++do_test 11.0.1 {
++  sqlite3_matchertext_exec db {CREATE TABLE signature_test(x)}
++  hexio_read test11.db 0 16
++} {53514C69746520666F726D6174203300}
++do_test 11.0.2 {
++  db close
++  sqlite3_matchertext_test_bypass 1
++  sqlite3 db test11.db
++  set res [catchsql {SELECT * FROM signature_test}]
++  db close
++  sqlite3_matchertext_test_bypass 0
++  sqlite3 db test11.db
++  set res
++} {0 {}}
++do_test 11.0.3 {
++  forcedelete standard11.db
++  sqlite3_matchertext_test_bypass 1
++  sqlite3 standard standard11.db
++  standard eval {CREATE TABLE t(x)}
++  standard close
++  sqlite3_matchertext_test_bypass 0
++  sqlite3 standard standard11.db
++  set res [catch {
++    sqlite3_matchertext_exec standard {SELECT * FROM t}
++  } msg]
++  standard close
++  forcedelete standard11.db
++  list $res $msg
++} {0 {}}
++
++do_test 11.1.1 {
++  sqlite3_matchertext_exec db {CREATE TABLE ?I(name TEXT)} I users
++} {}
++do_test 11.1.2 {
++  sqlite3_matchertext_exec db {INSERT INTO ?I VALUES(?V)} I users V alice
++} {}
++do_test 11.1.3 {
++  sqlite3_matchertext_exec db {INSERT INTO ?I VALUES(?V)} I users V bob
++} {}
++do_test 11.1.4 {
++  sqlite3_matchertext_exec db {SELECT name FROM ?I ORDER BY name} I users
++} {alice bob}
++
++# ?V is a bound value. SQL syntax in a valid value stays data.
++do_test 11.2.1 {
++  sqlite3_matchertext_exec db \
++      {SELECT count(*) FROM users WHERE name=?V} V {' OR '1'='1}
++} {0}
++do_test 11.2.2 {
++  sqlite3_matchertext_exec db {SELECT ?V} V {(safe [value])}
++} {{(safe [value])}}
++do_test 11.2.3 {
++  sqlite3_matchertext_exec db {INSERT INTO users VALUES(?V)} V {a\c()b}
++  sqlite3_matchertext_exec db {
++    SELECT hex(name), name FROM users WHERE hex(name)='615C63282962'
++  }
++} {615C63282962 {a\c()b}}
++
++# Each input is checked before composition. Both value-hole breakouts and the
++# equivalent name-hole breakout fail before SQLite parses the composed SQL.
++foreach {tn template type value} {
++  value-unbalanced {SELECT count(*) FROM users WHERE name=?V} V \
++      {)' OR 1=1 --}
++  value-balanced-attack {SELECT count(*) FROM users WHERE name=?V} V \
++      {)' OR (1=1) AND name<>M'(}
++  name-breakout {SELECT count(*) FROM ?I} I \
++      {users] WHERE 1=1 OR name<>[}
++} {
++  do_test 11.3.$tn {
++    list [catch {
++      sqlite3_matchertext_exec db $template $type $value
++    } msg] $msg
++  } {1 {matchertext argument 1 is not valid matchertext}}
++}
++
++# The balancing payload is also refused when it is the first statement on a
++# new connection.
++do_test 11.4.1 {
++  db close
++  sqlite3 db test11.db
++  list [catch {
++    sqlite3_matchertext_exec db \
++      {SELECT count(*) FROM users WHERE name=?V} V \
++      {)' OR (1=1) AND name<>M'(}
++  } msg] $msg
++} {1 {matchertext argument 1 is not valid matchertext}}
++
++# Complete templates can contain literals and quoted identifiers. Their
++# bounds are inside the checked template, not inside an input argument.
++do_test 11.5.1 {
++  sqlite3_matchertext_exec db {SELECT 'text'}
++} {text}
++do_test 11.5.2 {
++  sqlite3_matchertext_exec db {SELECT M'(text)'}
++} {text}
++do_test 11.5.3 {
++  sqlite3_matchertext_exec db {SELECT [name] FROM [users] ORDER BY [name]}
++} {{a\c()b} alice bob}
++do_test 11.5.4 {
++  sqlite3_matchertext_exec db {SELECT "name" FROM "users" ORDER BY "name"}
++} {{a\c()b} alice bob}
++do_test 11.5.5 {
++  sqlite3_matchertext_exec db {SELECT `name` FROM `users` ORDER BY `name`}
++} {{a\c()b} alice bob}
++
++# Comment bytes are outside matchertext checking. Matcher bytes in real SQL
++# and in an input remain checked.
++do_test 11.6.1 {
++  sqlite3_matchertext_exec db {SELECT 1 -- )}
++} {1}
++do_test 11.6.2 {
++  sqlite3_matchertext_exec db "SELECT 2 /* (\[\} */"
++} {2}
++do_test 11.6.3 {
++  list [catch {sqlite3_matchertext_exec db {SELECT (1}} msg] $msg
++} {1 {matchertext template is not valid matchertext}}
++do_test 11.6.4 {
++  list [catch {sqlite3_matchertext_exec db {SELECT ?V} V {-- )}} msg] $msg
++} {1 {matchertext argument 1 is not valid matchertext}}
++
++# Placeholder syntax, type, count, and statement count are exact.
++do_test 11.7.1 {
++  list [catch {sqlite3_matchertext_exec db {SELECT ?} V x} msg] $msg
++} {1 {matchertext templates require ?V or ?I parameters}}
++do_test 11.7.2 {
++  list [catch {sqlite3_matchertext_exec db {SELECT ?V} I x} msg] $msg
++} {1 {matchertext argument 1 does not match ?V}}
++do_test 11.7.3 {
++  list [catch {sqlite3_matchertext_exec db {SELECT ?V}} msg] $msg
++} {1 {matchertext template has more placeholders than arguments}}
++do_test 11.7.4 {
++  list [catch {sqlite3_matchertext_exec db {SELECT 1} V x} msg] $msg
++} {1 {matchertext template has fewer placeholders than arguments}}
++do_test 11.7.5 {
++  list [catch {
++    sqlite3_matchertext_exec db {SELECT 1; SELECT 2}
++  } msg] $msg
++} {1 {matchertext templates must contain one SQL statement}}
++
++# An input that is not matchertext cannot bypass the typed input gate.
++do_test 11.8.1 {
++  list [catch {sqlite3_matchertext_exec db {SELECT ?V} V {smile :]}} msg] $msg
++} {1 {matchertext argument 1 is not valid matchertext}}
++
++#-------------------------------------------------------------------------
++# 12.*: Internal SQL, schema reload, and DQS.
++
++do_test 12.1.1 {
++  sqlite3_matchertext_exec db {CREATE VIEW v11 AS SELECT 'lit' AS x}
++  db close
++  sqlite3 db test11.db
++  sqlite3_matchertext_exec db {SELECT x FROM v11}
++} {lit}
++do_test 12.1.2 {
++  sqlite3_matchertext_exec db {ANALYZE}
++} {}
++do_test 12.1.3 {
++  sqlite3_matchertext_exec db {VACUUM}
++} {}
++ifcapable deserialize {
++  do_test 12.1.4 {
++    sqlite3_matchertext_exec db {ATTACH ':memory:' AS aux}
++    db deserialize aux [db serialize main]
++    set res [sqlite3_matchertext_exec db {
++      SELECT count(*) FROM aux.sqlite_schema WHERE name=?V
++    } V users]
++    sqlite3_matchertext_exec db {DETACH aux}
++    set res
++  } {1}
++}
++
++# DQS remains a separate SQLite setting in strict mode too.
++do_test 12.2.1 {
++  sqlite3_matchertext_exec db {SELECT "nosuchcol11"}
++} {nosuchcol11}
++
++#-------------------------------------------------------------------------
++# 13.*: Legacy entry points and removed runtime controls.
++
++do_test 13.1.1 {
++  list [catch {db eval {CREATE TABLE legacy(x)}} msg] $msg
++} {1 {matchertext requires sqlite3_matchertext_prepare_v3(); pass inputs separately}}
++do_test 13.1.2 {
++  sqlite3_matchertext_exec db {
++    SELECT count(*) FROM sqlite_schema WHERE name=?V
++  } V legacy
++} {0}
++do_test 13.1.3 {
++  list [catch {sqlite3_prepare_v2 db {SELECT 1} -1 tail} msg] $msg
++} {1 {(21) matchertext requires sqlite3_matchertext_prepare_v3(); pass inputs separately}}
++
++# The removed PRAGMA is unknown, and the removed db_config verb cannot turn
++# matchertext off.
++do_test 13.2.1 {
++  sqlite3_matchertext_exec db {PRAGMA matchertext}
++} {}
++do_test 13.2.2 {
++  list [catch {sqlite3_db_config db MATCHERTEXT 0} msg] $msg
++} {1 {unknown sqlite3_db_config setting}}
++
++db close
++sqlite3_matchertext_test_bypass 1
++sqlite3 db test.db
++
++#-------------------------------------------------------------------------
++# 14.*: sqlite3_complete().
++#
++# The shell decides where one statement ends with its own scanner, separate
++# from the tokenizer.  It has to end both holes the same way, or a value
++# carrying a semicolon would split a statement that the parser reads whole.
++
++ifcapable !complete {
++  finish_test
++  return
++}
++
++# 14.1: a matchertext literal is one token, so what it carries does not end
++# the statement.  Each of these is a single complete statement.
++foreach {tn sql} {
++  1  {SELECT M'(;)';}
++  2  {SELECT M'(it's)';}
++  3  {SELECT M'(a;b)' , M'(c;d)';}
++  4  {SELECT M'(--)';}
++  5  {SELECT M'(/* x */)';}
++  6  {SELECT M'((a;b))';}
++  7  {SELECT m'(;)';}
++} {
++  do_test 14.1.$tn { db complete $sql } {1}
++}
++
++# 14.2: and the same text without the trailing semicolon is not complete
++foreach {tn sql} {
++  1  {SELECT M'(;)'}
++  2  {SELECT M'(it's)'}
++} {
++  do_test 14.2.$tn { db complete $sql } {0}
++}
++
++# 14.3: an unterminated literal leaves the statement open, whatever it
++# carries.  The shell keeps reading rather than sending a broken statement.
++foreach {tn sql} {
++  1  {SELECT M'(}
++  2  {SELECT M'(a;}
++  3  {SELECT M'(a;)}
++  4  {SELECT M'(unbalanced ; }
++} {
++  do_test 14.3.$tn { db complete $sql } {0}
++}
++
++# 14.4: the name hole ends by balance too, so a nested bracket does not end
++# the name early and a semicolon inside one is not a separator
++do_test 14.4.1 { db complete {SELECT * FROM [a[b]c];} } {1}
++do_test 14.4.2 { db complete {SELECT * FROM [a;b];} } {1}
++do_test 14.4.3 { db complete {SELECT * FROM [a[b]c]} } {0}
++do_test 14.4.4 { db complete {SELECT * FROM [a[b} } {0}
++# The sharpest case: ending the name at the first ']' would leave the ';'
++# outside it and split the statement in the middle of a name.
++do_test 14.4.5 { db complete {SELECT * FROM [a[b]c;d]} } {0}
++do_test 14.4.6 { db complete {SELECT * FROM [a[b]c;d];} } {1}
++
++# 14.5: an ill-formed literal is not a literal.  M lexes as an identifier
++# and the quote that follows opens an ordinary string, which is exactly what
++# the tokenizer does with the same text.
++do_test 14.5.1 { db complete {SELECT M'abc';} } {1}
++do_test 14.5.2 { db complete {SELECT M 'abc';} } {1}
++do_test 14.5.3 { db complete {SELECT M'(a]b)';} } {1}
++
++# 14.6: text that has always parsed is unaffected
++foreach {tn sql res} {
++  1  {SELECT 1;}              1
++  2  {SELECT 'a;b';}          1
++  3  {SELECT 1}               0
++  4  {SELECT "a;b";}          1
++  5  {SELECT [ident];}        1
++  6  {CREATE TABLE t(x);}     1
++  7  {SELECT '}               0
++} {
++  do_test 14.6.$tn { db complete $sql } $res
++}
++
++#-------------------------------------------------------------------------
++# 15.*: The corpus experiment, pinned.
++#
++# pipeline/sqli_experiment.py places every recorded SQL attack payload into a
++# real statement and compares the compiled bytecode against the same statement
++# holding a benign value. This layer keeps a few of its cases here, so a
++# regression is caught by "make matchertext" rather than only by a run that
++# needs data/cve.db.
++#
++# Two gaps in 4.5 are what these cover. It pastes the payload into M'(...)' by
++# hand, so it can only use payloads that already balance; and it never composes
++# %m with the skeleton comparison, although %m is the conversion that exists
++# precisely to carry a value that does not balance.
++
++do_execsql_test 15.0 {
++  CREATE TABLE t15(name TEXT, id INTEGER);
++  INSERT INTO t15 VALUES('alice',1),('bob',2);
++}
++
++# mt_m_skeleton is 4.5's comparison with the literal written by %m rather than
++# by hand, so an unbalanced payload can be tested at all.
++proc mt_m_skeleton {sql payload} {
++  set out [list]
++  foreach {addr opcode p1 p2 p3 p4 p5 comment} \
++      [execsql [sqlite3_matchertext_printf $sql $payload]] {
++    lappend out $addr $opcode $p1 $p2 $p3 $p5
++  }
++  return $out
++}
++
++set mt15_hosts {
++  select   {EXPLAIN SELECT id FROM t15 WHERE name = %m}
++  insert   {EXPLAIN INSERT INTO t15(name) VALUES(%m)}
++  like     {EXPLAIN SELECT id FROM t15 WHERE name LIKE %m}
++  ordering {EXPLAIN SELECT %m AS c FROM t15 ORDER BY 1}
++}
++
++# 15.1: values 4.5 cannot express, because none of them balances.  Every one
++# reaches the parser through %m, which escapes the unmatched matchers.
++set mt15_unbalanced {
++  1  {x) OR 1=1 --}
++  2  {smile :]}
++  3  {)(}
++  4  {(a]}
++  5  {)' OR 1=1 --}
++  6  {]}
++  7  {f(x}
++}
++foreach {host sql} $mt15_hosts {
++  set mt15_base [mt_m_skeleton $sql {alice}]
++  foreach {tn payload} $mt15_unbalanced {
++    do_test 15.1.$host.$tn { mt_m_skeleton $sql $payload } $mt15_base
++  }
++}
++
++# 15.2: strings taken from the corpus itself, each one a payload that does
++# break out of a quoted slot when it is concatenated (see 15.4).
++set mt15_corpus {
++  1  {admin' --}
++  2  {' or 1/*}
++  3  {'OR 1=1--}
++  4  {root' --}
++  5  {' or ''='}
++}
++foreach {host sql} $mt15_hosts {
++  set mt15_base [mt_m_skeleton $sql {alice}]
++  foreach {tn payload} $mt15_corpus {
++    do_test 15.2.$host.$tn { mt_m_skeleton $sql $payload } $mt15_base
++  }
++}
++
++# 15.3: the value survives the round trip whatever it held
++foreach {tn payload} $mt15_unbalanced {
++  do_test 15.3.unbalanced.$tn {
++    execsql [sqlite3_matchertext_printf {SELECT %m} $payload]
++  } [list $payload]
++}
++foreach {tn payload} $mt15_corpus {
++  do_test 15.3.corpus.$tn {
++    execsql [sqlite3_matchertext_printf {SELECT %m} $payload]
++  } [list $payload]
++}
++
++# 15.4: the same payloads against a quoted slot built by concatenation, which
++# is what the corpus was written to attack.  These must NOT be inert: a suite
++# where nothing breaks out is not evidence of containment, only of a test that
++# cannot see one.  15.4.1 counts 2 of 2 rows, so the WHERE clause was defeated.
++do_test 15.4.1 {
++  execsql "SELECT count(*) FROM t15 WHERE name = '[set p {' or ''='}]'"
++} {2}
++do_test 15.4.2 {
++  execsql "SELECT count(*) FROM t15 WHERE name = '[set p {' OR 1=1 --}]'"
++} {2}
++# and the matchertext form of the same statement selects nothing
++do_test 15.4.3 {
++  execsql [sqlite3_matchertext_printf \
++      {SELECT count(*) FROM t15 WHERE name = %m} {' or ''='}]
++} {0}
++
++# 15.5: premise A2, that the value must go through the hole rather than into
++# it.  A caller that builds M'(' and ')' itself and concatenates is outside the
++# discipline, and the value escapes exactly as it would from a quote.  Recorded
++# here so the cost of hand-building a hole stays visible.
++do_test 15.5.1 {
++  execsql "SELECT count(*) FROM t15 WHERE name = M'([set p {)' OR 1=1 --}])'"
++} {2}
++# %m closes it, because the encoder escapes the unmatched closer
++do_test 15.5.2 {
++  execsql [sqlite3_matchertext_printf \
++      {SELECT count(*) FROM t15 WHERE name = %m} {)' OR 1=1 --}]
++} {0}
++# and VERIFY refuses it outright rather than rewriting it
++do_test 15.5.3 {
++  sqlite3_matchertext_verify {)' OR 1=1 --}
++} {0}
++
++# 15.6: the name hole, where a bound parameter cannot go.  Encoding is the
++# caller's job here, since no % conversion writes a bracketed name.
++do_execsql_test 15.6.0 {
++  CREATE TABLE t15b([id] INTEGER, [odd name] TEXT);
++  INSERT INTO t15b VALUES(1,'x');
++}
++# A hand-built name hole lets the value out: the statement was written to read
++# t15b and reads the schema instead.
++do_test 15.6.1 {
++  set p {name] FROM sqlite_schema --[}
++  expr {[lsearch [execsql "SELECT \[$p\] FROM t15b"] t15b]>=0}
++} {1}
++# Encoded, the whole value is one name. Naming no column is an error, and the
++# error repeats the value back in full, which is what says no part of it was
++# read as syntax.
++do_test 15.6.2 {
++  set enc [sqlite3_matchertext_encode {name] FROM sqlite_schema --[}]
++  catchsql "SELECT \[$enc\] FROM t15b"
++} {1 {no such column: name] FROM sqlite_schema --[}}
++do_test 15.6.3 {
++  set enc [sqlite3_matchertext_encode {odd name}]
++  execsql "SELECT \[$enc\] FROM t15b"
++} {x}
++
++finish_test
+diff --git a/tool/mksqlite3c.tcl b/tool/mksqlite3c.tcl
+index 0c058672f9..9939a35025 100644
+--- a/tool/mksqlite3c.tcl
++++ b/tool/mksqlite3c.tcl
+@@ -465,6 +465,7 @@ set flist {
+ 
+    parse.c
+ 
++   matchertext.c
+    tokenize.c
+    complete.c
+ 

@@ -6,6 +6,8 @@ an SQL boundary. All other bytes are nonmatchers.
 
 The additions do not change the SQLite database file format.
 
+Note: all changes can be easily read [here](changes.diff)
+
 ## Build modes
 
 Build the additive mode with `SQLITE_ENABLE_MATCHERTEXT`:
