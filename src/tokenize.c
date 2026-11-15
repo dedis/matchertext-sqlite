@@ -558,6 +558,13 @@ i64 sqlite3GetToken(const unsigned char *z, int *tokenType){
           *tokenType = TK_MTSTRING;
           return i+3; /* Go past the ending )' chars */
         }
+        if( i!=0 ){
+          /* A hole that opens and does not close is an error.  Reading it as
+          ** the identifier M and a quoted string would let the quote rules
+          ** decide where an unverified value ends. */
+          *tokenType = TK_ILLEGAL;
+          return i>0 ? i+2 : 3;
+        }
       }
 #endif
       if( aiClass[z[1]]>CC_KYWD ){ i = 1;  break; }
@@ -617,6 +624,24 @@ i64 sqlite3GetToken(const unsigned char *z, int *tokenType){
   return i;
 }
 
+#ifdef SQLITE_ENABLE_MATCHERTEXT
+/*
+** Return the length of the token at z[0] of SQL text stored in the schema,
+** and write its type into *tokenType.  Stored text may come from a build
+** without matchertext, where a [name] ends at its first ']' whether or not
+** its brackets balance.  Such a name was valid when it was written, so it
+** is read the stock way rather than refused.
+*/
+i64 sqlite3GetStoredToken(const unsigned char *z, int *tokenType){
+  i64 n = sqlite3GetToken(z, tokenType);
+  if( *tokenType==TK_ILLEGAL && z[0]=='[' && z[n]==']' ){
+    *tokenType = TK_ID;
+    n++;
+  }
+  return n;
+}
+#endif
+
 /*
 ** Run the parser on the given SQL string.
 */
@@ -666,7 +691,15 @@ int sqlite3RunParser(Parse *pParse, const char *zSql){
   pParentParse = db->pParse;
   db->pParse = pParse;
   while( 1 ){
+#ifdef SQLITE_ENABLE_MATCHERTEXT
+    /* Schema text, while it loads or while ALTER rewrites it, may come from
+    ** a build without matchertext. */
+    n = (db->init.busy || IN_RENAME_OBJECT)
+          ? sqlite3GetStoredToken((u8*)zSql, &tokenType)
+          : sqlite3GetToken((u8*)zSql, &tokenType);
+#else
     n = sqlite3GetToken((u8*)zSql, &tokenType);
+#endif
     mxSqlLen -= n;
     if( mxSqlLen<0 ){
       pParse->rc = SQLITE_TOOBIG;

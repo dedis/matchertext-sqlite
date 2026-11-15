@@ -26,13 +26,19 @@
 ** the xCallback() function is called.  pArg becomes the first
 ** argument to xCallback().  If xCallback=NULL then no callback
 ** is invoked, even for queries.
+**
+** bInternal is true for SQL that SQLite composes itself.  A strict
+** matchertext build then prepares each statement through the internal entry
+** point, and marks only the prepare as internal: app code that runs while a
+** statement steps, such as a commit hook, still meets the strict check.
 */
-int sqlite3_exec(
+static int execWith(
   sqlite3 *db,                /* The database on which the SQL executes */
   const char *zSql,           /* The SQL to be executed */
   sqlite3_callback xCallback, /* Invoke this callback routine */
   void *pArg,                 /* First argument to xCallback() */
-  char **pzErrMsg             /* Write error messages here */
+  char **pzErrMsg,            /* Write error messages here */
+  int bInternal               /* True for SQLite's own SQL */
 ){
   int rc = SQLITE_OK;         /* Return code */
   const char *zLeftover;      /* Tail of unprocessed SQL */
@@ -41,23 +47,23 @@ int sqlite3_exec(
   int callbackIsInit;         /* True if callback data is initialized */
 
   if( !sqlite3SafetyCheckOk(db) ) return SQLITE_MISUSE_BKPT;
-#ifdef SQLITE_ENABLE_MATCHERTEXT
-  if( !sqlite3MatchertextLegacyAllowed(db) ){
-    rc = sqlite3MatchertextLegacyError(db, "sqlite3_matchertext_prepare_v3()");
-    if( pzErrMsg ) *pzErrMsg = sqlite3_mprintf("%s", sqlite3_errmsg(db));
-    return rc;
-  }
-#endif
   if( zSql==0 ) zSql = "";
 
   sqlite3_mutex_enter(db->mutex);
   sqlite3Error(db, SQLITE_OK);
+#ifdef SQLITE_ENABLE_MATCHERTEXT
+  if( !bInternal ){
+    rc = sqlite3MatchertextLegacyCheck(db, "sqlite3_matchertext_prepare_v3()");
+    if( rc!=SQLITE_OK ) goto exec_out;
+  }
+#endif
   while( rc==SQLITE_OK && zSql[0] ){
     int nCol = 0;
     char **azVals = 0;
 
     pStmt = 0;
-    rc = sqlite3_prepare_v2(db, zSql, -1, &pStmt, &zLeftover);
+    rc = bInternal ? sqlite3InternalPrepareV2(db, zSql, -1, &pStmt, &zLeftover)
+                   : sqlite3_prepare_v2(db, zSql, -1, &pStmt, &zLeftover);
     assert( rc==SQLITE_OK || pStmt==0 );
     if( rc!=SQLITE_OK ){
       continue;
@@ -146,3 +152,25 @@ exec_out:
   sqlite3_mutex_leave(db->mutex);
   return rc;
 }
+int sqlite3_exec(
+  sqlite3 *db,                /* The database on which the SQL executes */
+  const char *zSql,           /* The SQL to be executed */
+  sqlite3_callback xCallback, /* Invoke this callback routine */
+  void *pArg,                 /* First argument to xCallback() */
+  char **pzErrMsg             /* Write error messages here */
+){
+  return execWith(db, zSql, xCallback, pArg, pzErrMsg, 0);
+}
+
+#if defined(SQLITE_ENABLE_MATCHERTEXT) && defined(SQLITE_MATCHERTEXT_STRICT)
+/* SQLite's own SQL.  Only its prepares are internal; see execWith(). */
+int sqlite3InternalExec(
+  sqlite3 *db,
+  const char *zSql,
+  sqlite3_callback xCallback,
+  void *pArg,
+  char **pzErrMsg
+){
+  return execWith(db, zSql, xCallback, pArg, pzErrMsg, 1);
+}
+#endif

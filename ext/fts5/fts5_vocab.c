@@ -350,7 +350,7 @@ static int fts5VocabOpenMethod(
       pTab->zFts5Tbl, pTab->zFts5Db, pTab->zFts5Tbl, pTab->zFts5Tbl
   );
   if( zSql ){
-    rc = sqlite3_prepare_v2(pTab->db, zSql, -1, &pStmt, 0);
+    rc = sqlite3InternalPrepareV2(pTab->db, zSql, -1, &pStmt, 0);
   }
   sqlite3_free(zSql);
   assert( rc==SQLITE_OK || pStmt==0 );

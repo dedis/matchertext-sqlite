@@ -89,6 +89,22 @@
 #if !defined(SQLITE_CORE) || defined(SQLITE_ENABLE_RBU)
 #include "sqlite3rbu.h"
 
+/* SQL that the extension composes itself.  Built into the library, it runs
+** through the internal entry points of sqliteInt.h, which a strict
+** matchertext build admits while it refuses the plain ones. */
+#if defined(SQLITE_CORE) && defined(SQLITE_ENABLE_MATCHERTEXT) \
+ && defined(SQLITE_MATCHERTEXT_STRICT)
+int sqlite3InternalExec(sqlite3*, const char*, sqlite3_callback, void*, char**);
+int sqlite3InternalPrepareV2(sqlite3*, const char*, int, sqlite3_stmt**,
+                             const char**);
+int sqlite3InternalPrepareV3(sqlite3*, const char*, int, unsigned int,
+                             sqlite3_stmt**, const char**);
+#elif !defined(sqlite3InternalExec)
+# define sqlite3InternalExec sqlite3_exec
+# define sqlite3InternalPrepareV2 sqlite3_prepare_v2
+# define sqlite3InternalPrepareV3 sqlite3_prepare_v3
+#endif
+
 #if defined(_WIN32_WCE)
 #include "windows.h"
 #endif
@@ -766,7 +782,7 @@ static int prepareAndCollectError(
   char **pzErrmsg,
   const char *zSql
 ){
-  int rc = sqlite3_prepare_v2(db, zSql, -1, ppStmt, 0);
+  int rc = sqlite3InternalPrepareV2(db, zSql, -1, ppStmt, 0);
   if( rc!=SQLITE_OK ){
     *pzErrmsg = sqlite3_mprintf("%s", sqlite3_errmsg(db));
     *ppStmt = 0;
@@ -902,7 +918,7 @@ static int rbuObjIterNext(sqlite3rbu *p, RbuObjIter *pIter){
     /* Free any SQLite statements used while processing the previous object */ 
     rbuObjIterClearStatements(pIter);
     if( pIter->zIdx==0 ){
-      rc = sqlite3_exec(p->dbMain,
+      rc = sqlite3InternalExec(p->dbMain,
           "DROP TRIGGER IF EXISTS temp.rbu_insert_tr;"
           "DROP TRIGGER IF EXISTS temp.rbu_update1_tr;"
           "DROP TRIGGER IF EXISTS temp.rbu_update2_tr;"
@@ -1081,7 +1097,7 @@ static int rbuMPrintfExec(sqlite3rbu *p, sqlite3 *db, const char *zFmt, ...){
     if( zSql==0 ){
       p->rc = SQLITE_NOMEM;
     }else{
-      p->rc = sqlite3_exec(db, zSql, 0, 0, &p->zErrmsg);
+      p->rc = sqlite3InternalExec(db, zSql, 0, 0, &p->zErrmsg);
     }
   }
   sqlite3_free(zSql);
@@ -2836,7 +2852,7 @@ static void rbuOpenDatabase(sqlite3rbu *p, sqlite3 *dbMain, int *pbRetry){
 
 #if 0
   if( p->rc==SQLITE_OK && rbuIsVacuum(p) ){
-    p->rc = sqlite3_exec(p->dbRbu, "BEGIN", 0, 0, 0);
+    p->rc = sqlite3InternalExec(p->dbRbu, "BEGIN", 0, 0, 0);
   }
 #endif
 
@@ -2867,7 +2883,7 @@ static void rbuOpenDatabase(sqlite3rbu *p, sqlite3 *dbMain, int *pbRetry){
       }
     
       if( p->rc==SQLITE_OK ){
-        p->rc = sqlite3_exec(p->dbRbu, "COMMIT", 0, 0, 0);
+        p->rc = sqlite3InternalExec(p->dbRbu, "COMMIT", 0, 0, 0);
       }
     }
   }
@@ -3049,7 +3065,8 @@ static void rbuSetupCheckpoint(sqlite3rbu *p, RbuState *pState){
   if( pState==0 ){
     p->eStage = 0;
     if( p->rc==SQLITE_OK ){
-      p->rc = sqlite3_exec(p->dbMain, "SELECT * FROM sqlite_schema", 0, 0, 0);
+      p->rc = sqlite3InternalExec(p->dbMain, "SELECT * FROM sqlite_schema",
+                                  0, 0, 0);
     }
   }
 
@@ -3084,7 +3101,8 @@ static void rbuSetupCheckpoint(sqlite3rbu *p, RbuState *pState){
   if( p->rc==SQLITE_OK ){
     int rc2;
     p->eStage = RBU_STAGE_CAPTURE;
-    rc2 = sqlite3_exec(p->dbMain, "PRAGMA main.wal_checkpoint=restart", 0, 0,0);
+    rc2 = sqlite3InternalExec(p->dbMain,
+        "PRAGMA main.wal_checkpoint=restart", 0, 0, 0);
     if( rc2!=SQLITE_NOTICE ) p->rc = rc2;
   }
 
@@ -3658,7 +3676,8 @@ static void rbuCreateTargetSchema(sqlite3rbu *p){
   sqlite3_stmt *pInsert = 0;
 
   assert( rbuIsVacuum(p) );
-  p->rc = sqlite3_exec(p->dbMain, "PRAGMA writable_schema=1", 0,0, &p->zErrmsg);
+  p->rc = sqlite3InternalExec(p->dbMain, "PRAGMA writable_schema=1", 0, 0,
+                              &p->zErrmsg);
   if( p->rc==SQLITE_OK ){
     p->rc = prepareAndCollectError(p->dbRbu, &pSql, &p->zErrmsg, 
       "SELECT sql FROM sqlite_schema WHERE sql!='' AND rootpage!=0"
@@ -3700,7 +3719,8 @@ static void rbuCreateTargetSchema(sqlite3rbu *p){
     p->rc = sqlite3_reset(pInsert);
   }
   if( p->rc==SQLITE_OK ){
-    p->rc = sqlite3_exec(p->dbMain, "PRAGMA writable_schema=0",0,0,&p->zErrmsg);
+    p->rc = sqlite3InternalExec(p->dbMain, "PRAGMA writable_schema=0", 0, 0,
+                                &p->zErrmsg);
   }
 
   rbuFinalize(p, pSql);
@@ -3759,10 +3779,10 @@ int sqlite3rbu_step(sqlite3rbu *p){
           rbuSaveState(p, RBU_STAGE_MOVE);
           rbuIncrSchemaCookie(p);
           if( p->rc==SQLITE_OK ){
-            p->rc = sqlite3_exec(p->dbMain, "COMMIT", 0, 0, &p->zErrmsg);
+            p->rc = sqlite3InternalExec(p->dbMain, "COMMIT", 0, 0, &p->zErrmsg);
           }
           if( p->rc==SQLITE_OK ){
-            p->rc = sqlite3_exec(p->dbRbu, "COMMIT", 0, 0, &p->zErrmsg);
+            p->rc = sqlite3InternalExec(p->dbRbu, "COMMIT", 0, 0, &p->zErrmsg);
           }
           p->eStage = RBU_STAGE_MOVE;
         }
@@ -4126,7 +4146,7 @@ static sqlite3rbu *openRbuHandle(
     if( p->rc==SQLITE_OK ){
       if( p->eStage==RBU_STAGE_OAL ){
         sqlite3 *db = p->dbMain;
-        p->rc = sqlite3_exec(p->dbRbu, "BEGIN", 0, 0, &p->zErrmsg);
+        p->rc = sqlite3InternalExec(p->dbRbu, "BEGIN", 0, 0, &p->zErrmsg);
 
         /* Point the object iterator at the first object */
         if( p->rc==SQLITE_OK ){
@@ -4147,7 +4167,8 @@ static sqlite3rbu *openRbuHandle(
           /* Open transactions both databases. The *-oal file is opened or
           ** created at this point. */
           if( p->rc==SQLITE_OK ){
-            p->rc = sqlite3_exec(db, "BEGIN IMMEDIATE", 0, 0, &p->zErrmsg);
+            p->rc = sqlite3InternalExec(db, "BEGIN IMMEDIATE", 0, 0,
+                                        &p->zErrmsg);
           }
 
           /* Check if the main database is a zipvfs db. If it is, set the upper
@@ -4156,7 +4177,7 @@ static sqlite3rbu *openRbuHandle(
           if( p->rc==SQLITE_OK ){
             int frc = sqlite3_file_control(db, "main", SQLITE_FCNTL_ZIPVFS, 0);
             if( frc==SQLITE_OK ){
-              p->rc = sqlite3_exec(
+              p->rc = sqlite3InternalExec(
                 db, "PRAGMA journal_mode=off",0,0,&p->zErrmsg);
             }
           }
@@ -4275,7 +4296,7 @@ int sqlite3rbu_close(sqlite3rbu *p, char **pzErrmsg){
 
     /* Commit the transaction to the *-oal file. */
     if( p->rc==SQLITE_OK && p->eStage==RBU_STAGE_OAL ){
-      p->rc = sqlite3_exec(p->dbMain, "COMMIT", 0, 0, &p->zErrmsg);
+      p->rc = sqlite3InternalExec(p->dbMain, "COMMIT", 0, 0, &p->zErrmsg);
     }
 
     /* Sync the db file if currently doing an incremental checkpoint */
@@ -4287,7 +4308,7 @@ int sqlite3rbu_close(sqlite3rbu *p, char **pzErrmsg){
     rbuSaveState(p, p->eStage);
 
     if( p->rc==SQLITE_OK && p->eStage==RBU_STAGE_OAL ){
-      p->rc = sqlite3_exec(p->dbRbu, "COMMIT", 0, 0, &p->zErrmsg);
+      p->rc = sqlite3InternalExec(p->dbRbu, "COMMIT", 0, 0, &p->zErrmsg);
     }
 
     /* Close any open statement handles. */
@@ -4299,7 +4320,8 @@ int sqlite3rbu_close(sqlite3rbu *p, char **pzErrmsg){
     ** specifying the current target and state databases to start a new
     ** vacuum from scratch.  */
     if( rbuIsVacuum(p) && p->rc!=SQLITE_OK && p->dbRbu ){
-      int rc2 = sqlite3_exec(p->dbRbu, "DELETE FROM stat.rbu_state", 0, 0, 0);
+      int rc2 = sqlite3InternalExec(p->dbRbu, "DELETE FROM stat.rbu_state",
+                                    0, 0, 0);
       if( p->rc==SQLITE_DONE && rc2!=SQLITE_OK ) p->rc = rc2;
     }
 
@@ -4410,7 +4432,7 @@ int sqlite3rbu_savestate(sqlite3rbu *p){
   assert( p->eStage>=RBU_STAGE_OAL && p->eStage<=RBU_STAGE_DONE );
   if( p->eStage==RBU_STAGE_OAL ){
     assert( rc!=SQLITE_DONE );
-    if( rc==SQLITE_OK ) rc = sqlite3_exec(p->dbMain, "COMMIT", 0, 0, 0);
+    if( rc==SQLITE_OK ) rc = sqlite3InternalExec(p->dbMain, "COMMIT", 0, 0, 0);
   }
 
   /* Sync the db file */
@@ -4425,12 +4447,14 @@ int sqlite3rbu_savestate(sqlite3rbu *p){
 
   if( p->eStage==RBU_STAGE_OAL ){
     assert( rc!=SQLITE_DONE );
-    if( rc==SQLITE_OK ) rc = sqlite3_exec(p->dbRbu, "COMMIT", 0, 0, 0);
+    if( rc==SQLITE_OK ) rc = sqlite3InternalExec(p->dbRbu, "COMMIT", 0, 0, 0);
     if( rc==SQLITE_OK ){ 
       const char *zBegin = rbuIsVacuum(p) ? "BEGIN" : "BEGIN IMMEDIATE";
-      rc = sqlite3_exec(p->dbRbu, zBegin, 0, 0, 0);
+      rc = sqlite3InternalExec(p->dbRbu, zBegin, 0, 0, 0);
     }
-    if( rc==SQLITE_OK ) rc = sqlite3_exec(p->dbMain, "BEGIN IMMEDIATE", 0, 0,0);
+    if( rc==SQLITE_OK ){
+      rc = sqlite3InternalExec(p->dbMain, "BEGIN IMMEDIATE", 0, 0, 0);
+    }
   }
 
   p->rc = rc;

@@ -410,6 +410,9 @@ void sqlite3AlterFinishAddColumn(Parse *pParse, Token *pColDef){
     while( zEnd>zCol && (*zEnd==';' || sqlite3Isspace(*zEnd)) ){
       *zEnd-- = '\0';
     }
+#ifdef SQLITE_ENABLE_MATCHERTEXT
+    zCol = sqlite3MatchertextStockSql(db, zCol);
+#endif
     /* substr() operations on characters, but addColOffset is in bytes. So we
     ** have to use printf() to translate between these units: */
     assert( IsOrdinaryTable(pTab) );
@@ -2137,7 +2140,7 @@ static int getConstraintToken(const u8 *z, int *piToken){
   int iOff = 0;
   int t = 0;
   do {
-    iOff += sqlite3GetToken(&z[iOff], &t);
+    iOff += sqlite3GetStoredToken(&z[iOff], &t);
   }while( t==TK_SPACE || t==TK_COMMENT );
 
   *piToken = t;
@@ -2145,7 +2148,7 @@ static int getConstraintToken(const u8 *z, int *piToken){
   if( t==TK_LP ){
     int nNest = 1;
     while( nNest>0 ){
-      iOff += sqlite3GetToken(&z[iOff], &t);
+      iOff += sqlite3GetStoredToken(&z[iOff], &t);
       if( t==TK_LP ){
         nNest++;
       }else if( t==TK_RP ){
@@ -2398,7 +2401,7 @@ static int getWhitespace(const u8 *z){
   int nRet = 0;
   while( 1 ){
     int t = 0;
-    int n = sqlite3GetToken(&z[nRet], &t);
+    int n = sqlite3GetStoredToken(&z[nRet], &t);
     if( t!=TK_SPACE && t!=TK_COMMENT ) break;
     nRet += n;
   }
@@ -2515,7 +2518,7 @@ static int skipCreateTable(sqlite3_context *ctx, const u8 *zSql, int *piOff){
   /* Jump past the "CREATE TABLE" bit. */
   while( 1 ){
     int t = 0;
-    iOff += sqlite3GetToken(&zSql[iOff], &t);
+    iOff += sqlite3GetStoredToken(&zSql[iOff], &t);
     if( t==TK_LP ) break;
     if( t==TK_ILLEGAL ){
       sqlite3_result_error_code(ctx, SQLITE_CORRUPT_BKPT);
@@ -2652,7 +2655,7 @@ static void dropConstraintFunc(
     ** should be removed. */
     const char *zSpace = " ";
     iEnd += getWhitespace(&zSql[iEnd]);
-    sqlite3GetToken(&zSql[iEnd], &t);
+    sqlite3GetStoredToken(&zSql[iEnd], &t);
     if( t==TK_RP || t==TK_COMMA ){
       zSpace = "";
       if( zSql[iStart-1]==',' ) iStart--;
@@ -2683,8 +2686,12 @@ static void addConstraintFunc(
   int iCol = sqlite3_value_int(argv[2]);
   int iOff = 0;
   int ii;
+  sqlite3 *db = sqlite3_context_db_handle(ctx);
   sqlite3_str *pNew;
   int t = 0;
+#ifdef SQLITE_ENABLE_MATCHERTEXT
+  char *zStock = 0;
+#endif
   UNUSED_PARAMETER(NotUsed);
 
   if( skipCreateTable(ctx, zSql, &iOff) ) return;
@@ -2704,11 +2711,30 @@ static void addConstraintFunc(
 
   iOff += getWhitespace(&zSql[iOff]);
 
-  pNew = sqlite3_str_new(sqlite3_context_db_handle(ctx));
+#ifdef SQLITE_ENABLE_MATCHERTEXT
+  /* The constraint text joins the stored schema, so it is stored as stock
+  ** SQL, as CREATE statements are. */
+  if( zCons ){
+    zStock = sqlite3MatchertextStockSql(db, sqlite3DbStrDup(db, zCons));
+    if( zStock==0 ){
+      if( db->mallocFailed ){
+        sqlite3_result_error_nomem(ctx);
+      }else{
+        sqlite3_result_error_toobig(ctx);
+      }
+      return;
+    }
+    zCons = zStock;
+  }
+#endif
+  pNew = sqlite3_str_new(db);
   sqlite3_str_append(pNew, (const char*)zSql, iOff);
   if( iCol<0 ) sqlite3_str_append(pNew, ",", 1);
   sqlite3_str_appendf(pNew, " %s%s", zCons, &zSql[iOff]);
   sqlite3_result_str(ctx, pNew, SQLITE_FINISH);
+#ifdef SQLITE_ENABLE_MATCHERTEXT
+  sqlite3DbFree(db, zStock);
+#endif
 }
 
 /*
@@ -2882,7 +2908,7 @@ static int alterRtrimConstraint(
 
   while( 1 ){
     int t = 0;
-    int nToken = sqlite3GetToken(&zTmp[iOff], &t);
+    int nToken = sqlite3GetStoredToken(&zTmp[iOff], &t);
     if( t==TK_ILLEGAL ) break;
     if( t!=TK_SPACE && (t!=TK_COMMENT || zTmp[iOff]!='-') ){
       iEnd = iOff+nToken;
@@ -2970,7 +2996,7 @@ static void findConstraintFunc(
 
   if( zSql==0 || zCons==0 ) return;
   while( t!=TK_LP && t!=TK_ILLEGAL ){
-    iOff += sqlite3GetToken(&zSql[iOff], &t);
+    iOff += sqlite3GetStoredToken(&zSql[iOff], &t);
   }
 
   while( 1 ){

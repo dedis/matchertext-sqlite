@@ -64,6 +64,22 @@
 #endif
 sqlite3_int64 sqlite3GetToken(const unsigned char*,int*); /* In SQLite core */
 
+/* SQL that the extension composes itself.  Built into the library, it runs
+** through the internal entry points of sqliteInt.h, which a strict
+** matchertext build admits while it refuses the plain ones. */
+#if defined(SQLITE_CORE) && defined(SQLITE_ENABLE_MATCHERTEXT) \
+ && defined(SQLITE_MATCHERTEXT_STRICT)
+int sqlite3InternalExec(sqlite3*, const char*, sqlite3_callback, void*, char**);
+int sqlite3InternalPrepareV2(sqlite3*, const char*, int, sqlite3_stmt**,
+                             const char**);
+int sqlite3InternalPrepareV3(sqlite3*, const char*, int, unsigned int,
+                             sqlite3_stmt**, const char**);
+#elif !defined(sqlite3InternalExec)
+# define sqlite3InternalExec sqlite3_exec
+# define sqlite3InternalPrepareV2 sqlite3_prepare_v2
+# define sqlite3InternalPrepareV3 sqlite3_prepare_v3
+#endif
+
 #include <stddef.h>
 
 /*
@@ -1091,7 +1107,7 @@ static int rtreeDestroy(sqlite3_vtab *pVtab){
     rc = SQLITE_NOMEM;
   }else{
     nodeBlobReset(pRtree);
-    rc = sqlite3_exec(pRtree->db, zCreate, 0, 0, 0);
+    rc = sqlite3InternalExec(pRtree->db, zCreate, 0, 0, 0);
     sqlite3_free(zCreate);
   }
   if( rc==SQLITE_OK ){
@@ -1796,7 +1812,7 @@ static int rtreeColumn(sqlite3_vtab_cursor *cur, sqlite3_context *ctx, int i){
   }else{
     if( !pCsr->bAuxValid ){
       if( pCsr->pReadAux==0 ){
-        rc = sqlite3_prepare_v3(pRtree->db, pRtree->zReadAuxSql, -1, 0,
+        rc = sqlite3InternalPrepareV3(pRtree->db, pRtree->zReadAuxSql, -1, 0,
                                 &pCsr->pReadAux, 0);
         if( rc ) return rc;
       }
@@ -3076,7 +3092,7 @@ static int rtreeConstraintError(Rtree *pRtree, int iCol){
   assert( iCol==0 || iCol%2 );
   zSql = sqlite3_mprintf("SELECT * FROM %Q.%Q", pRtree->zDb, pRtree->zName);
   if( zSql ){
-    rc = sqlite3_prepare_v2(pRtree->db, zSql, -1, &pStmt, 0);
+    rc = sqlite3InternalPrepareV2(pRtree->db, zSql, -1, &pStmt, 0);
   }else{
     rc = SQLITE_NOMEM;
   }
@@ -3290,7 +3306,7 @@ static int rtreeRename(sqlite3_vtab *pVtab, const char *zNewName){
   );
   if( zSql ){
     nodeBlobReset(pRtree);
-    rc = sqlite3_exec(pRtree->db, zSql, 0, 0, 0);
+    rc = sqlite3InternalExec(pRtree->db, zSql, 0, 0, 0);
     sqlite3_free(zSql);
   }
   return rc;
@@ -3343,7 +3359,7 @@ static int rtreeQueryStat1(sqlite3 *db, Rtree *pRtree){
   if( zSql==0 ){
     rc = SQLITE_NOMEM;
   }else{
-    rc = sqlite3_prepare_v2(db, zSql, -1, &p, 0);
+    rc = sqlite3InternalPrepareV2(db, zSql, -1, &p, 0);
     if( rc==SQLITE_OK ){
       if( sqlite3_step(p)==SQLITE_ROW ) nRow = sqlite3_column_int64(p, 0);
       rc = sqlite3_finalize(p);
@@ -3455,7 +3471,7 @@ static int rtreeSqlInit(
     if( !zCreate ){
       return SQLITE_NOMEM;
     }
-    rc = sqlite3_exec(db, zCreate, 0, 0, 0);
+    rc = sqlite3InternalExec(db, zCreate, 0, 0, 0);
     sqlite3_free(zCreate);
     if( rc!=SQLITE_OK ){
       return rc;
@@ -3485,7 +3501,7 @@ static int rtreeSqlInit(
     }
     zSql = sqlite3_mprintf(zFormat, zDb, zPrefix);
     if( zSql ){
-      rc = sqlite3_prepare_v3(db, zSql, -1, f, appStmt[i], 0); 
+      rc = sqlite3InternalPrepareV3(db, zSql, -1, f, appStmt[i], 0); 
     }else{
       rc = SQLITE_NOMEM;
     }
@@ -3518,7 +3534,7 @@ static int rtreeSqlInit(
       if( zSql==0 ){
         rc = SQLITE_NOMEM;
       }else{
-        rc = sqlite3_prepare_v3(db, zSql, -1, f, &pRtree->pWriteAux, 0); 
+        rc = sqlite3InternalPrepareV3(db, zSql, -1, f, &pRtree->pWriteAux, 0); 
         sqlite3_free(zSql);
       }
     }
@@ -3538,7 +3554,7 @@ static int getIntFromStmt(sqlite3 *db, const char *zSql, int *piVal){
   int rc = SQLITE_NOMEM;
   if( zSql ){
     sqlite3_stmt *pStmt = 0;
-    rc = sqlite3_prepare_v2(db, zSql, -1, &pStmt, 0);
+    rc = sqlite3InternalPrepareV2(db, zSql, -1, &pStmt, 0);
     if( rc==SQLITE_OK ){
       if( SQLITE_ROW==sqlite3_step(pStmt) ){
         *piVal = sqlite3_column_int(pStmt, 0);
@@ -3886,7 +3902,7 @@ static sqlite3_stmt *rtreeCheckPrepare(
     if( z==0 ){
       pCheck->rc = SQLITE_NOMEM;
     }else{
-      pCheck->rc = sqlite3_prepare_v2(pCheck->db, z, -1, &pRet, 0);
+      pCheck->rc = sqlite3InternalPrepareV2(pCheck->db, z, -1, &pRet, 0);
     }
   }
 

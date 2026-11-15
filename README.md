@@ -4,7 +4,9 @@ This SQLite tree adds an opt-in MatcherText input discipline. The additions
 check the balance of `()`, `[]`, and `{}` before an external value can change
 an SQL boundary. All other bytes are nonmatchers.
 
-The additions do not change the SQLite database file format.
+The additions do not change the SQLite database file format. The schema
+stores each statement as stock SQL, so a build without the additions can read
+a database that this build writes.
 
 Note: all changes can be easily read [here](changes.diff)
 
@@ -99,7 +101,9 @@ SELECT M'(Alice (admin))';
 ```
 
 The value of this expression is `Alice (admin)`. Quotes and SQL text inside
-the hole remain data because they do not define its end.
+the hole remain data because they do not define its end. A hole that opens and
+does not close, such as `M'(abc'`, is an `unrecognized token` error. It is not
+read as the identifier `M` and a quoted string.
 
 Square-bracket identifiers also use matcher balance:
 
@@ -108,7 +112,17 @@ SELECT [display(name)] FROM [users];
 ```
 
 The outer `[]` delimit the identifier. Matcher pairs inside the name must be
-balanced.
+balanced. The name reading decodes the matcher escapes but keeps every
+backslash. Use `sqlite3_matchertext_encode_name()` to place a name in a hole.
+
+When a statement is stored in the schema, a value hole becomes a `'...'`
+literal of its value. A name hole stays `[...]` when it holds no bracket and
+no backslash, and becomes `"..."` otherwise. The module arguments of
+`CREATE VIRTUAL TABLE` are stored as written, because SQLite passes them to the
+module as they are, when the table is created and again when it is opened.
+The built-in modules refuse holes in their arguments. Stored schema text from a build
+without the additions can hold a `[name]` with unbalanced brackets. That text
+is read the stock way, to the first `]`.
 
 ## Verify-or-refuse and encode-and-embed
 
@@ -149,6 +163,12 @@ char *sqlite3_matchertext_encode(
   sqlite3_int64 *output_length
 );
 
+char *sqlite3_matchertext_encode_name(
+  const char *name,
+  sqlite3_int64 length,
+  sqlite3_int64 *output_length
+);
+
 char *sqlite3_matchertext_decode(
   const char *value,
   sqlite3_int64 length,
@@ -175,6 +195,12 @@ The escape alphabet is:
 Only unmatched matcher characters use these forms. A matched pair remains
 unchanged.
 
+`sqlite3_matchertext_encode_name()` uses the same matcher escapes for the
+`[...]` name hole. It does not double backslashes, because the name reading
+keeps them. Where the input already reads as an escape, such as `\o()`, it
+escapes that matched pair instead: `\o()` becomes `\o\o()\c()`. The name that
+SQLite reads is then exactly the input. `?I` uses this encoder.
+
 ## Strict mode
 
 `SQLITE_MATCHERTEXT_STRICT` refuses external SQL passed through the legacy
@@ -182,8 +208,12 @@ UTF-8 and UTF-16 `sqlite3_prepare*()` APIs and through `sqlite3_exec()`. The
 error directs the caller to `sqlite3_matchertext_prepare_v3()`.
 
 SQLite can still prepare its own internal SQL for schema work, `ANALYZE`,
-`VACUUM`, attached databases, and statement recompilation. Strict mode has no
-run-time PRAGMA or database-configuration switch.
+`VACUUM`, attached databases, and statement recompilation. The SQL of the
+built-in extensions (FTS3, FTS5, R-Tree, RBU, and sessions), the table-valued
+pragmas, `dbstat`, and `bytecode` uses internal entry points that strict mode
+admits. An extension loaded at run time uses the public API, so strict mode
+refuses its SQL. Strict mode has no run-time PRAGMA or database-configuration
+switch.
 
 ## Implementation files
 
@@ -200,12 +230,13 @@ The principal additions are:
 
 ## Tests
 
-Build the strict test fixture and run the dedicated suite:
+Build the strict test fixture and run the dedicated suite. RBU is enabled so
+that its strict-mode tests run:
 
 ```sh
 make clean
-make OPTIONS="-DSQLITE_ENABLE_MATCHERTEXT -DSQLITE_MATCHERTEXT_STRICT" \
-  testfixture
+make OPTIONS="-DSQLITE_ENABLE_MATCHERTEXT -DSQLITE_MATCHERTEXT_STRICT \
+  -DSQLITE_ENABLE_RBU" testfixture
 ./testfixture test/matchertext.test
 ```
 

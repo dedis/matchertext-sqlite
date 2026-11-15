@@ -1298,8 +1298,8 @@ void sqlite3Pragma(
             char *zSql = sqlite3MPrintf(db, "SELECT*FROM\"%w\"", pTab->zName);
             if( zSql ){
               sqlite3_stmt *pDummy = 0;
-              (void)sqlite3_prepare_v3(db, zSql, -1, SQLITE_PREPARE_DONT_LOG,
-                                       &pDummy, 0);
+              (void)sqlite3InternalPrepareV3(db, zSql, -1,
+                                       SQLITE_PREPARE_DONT_LOG, &pDummy, 0);
               (void)sqlite3_finalize(pDummy);
               sqlite3DbFree(db, zSql);
             }
@@ -3012,7 +3012,7 @@ static int pragmaVtabFilter(
   }
   zSql = sqlite3StrAccumFinish(&acc);
   if( zSql==0 ) return SQLITE_NOMEM;
-  rc = sqlite3_prepare_v2(pTab->db, zSql, -1, &pCsr->pPragma, 0);
+  rc = sqlite3InternalPrepareV2(pTab->db, zSql, -1, &pCsr->pPragma, 0);
   sqlite3_free(zSql);
   if( rc!=SQLITE_OK ){
     pTab->base.zErrMsg = sqlite3_mprintf("%s", sqlite3_errmsg(pTab->db));

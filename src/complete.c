@@ -286,7 +286,8 @@ sqlite3_int64 sqlite3_incomplete(const char *zSql){
 #ifdef SQLITE_ENABLE_MATCHERTEXT
         /* A matchertext literal is one token, so the quotes and semicolons
         ** its value may carry do not end the statement. An ill-formed one
-        ** falls through and lexes as the identifier M, as in the tokenizer. */
+        ** falls through to the quote scan, so that a hole still being typed
+        ** stays incomplete; the tokenizer refuses it as an illegal token. */
         if( (zSql[0]|0x20)=='m' && zSql[1]=='\'' ){
           i64 nVal = sqlite3MatchertextEnd((const unsigned char*)(zSql+2));
           if( nVal>0 && zSql[2+nVal]=='\'' ){

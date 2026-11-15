@@ -185,15 +185,6 @@ int sqlite3MatchertextVerifySql(const unsigned char *z, i64 n){
   return d==0;
 }
 
-/* Legacy SQL entry points remain available only to SQLite's own parsers. */
-int sqlite3MatchertextInternalAllowed(sqlite3 *db){
-  Parse *pParse = db->pParse;
-  return db->init.busy
-      || db->nSqlExec                        /* inside OP_SqlExec: SQLite's own SQL */
-      || db->nMatchertextInternal
-      || (pParse!=0 && pParse->eParseMode!=PARSE_MODE_NORMAL);
-}
-
 /* Set the migration error returned by a disabled legacy SQL entry point. */
 int sqlite3MatchertextLegacyError(sqlite3 *db, const char *zReplacement){
   int rc;
@@ -206,15 +197,80 @@ int sqlite3MatchertextLegacyError(sqlite3 *db, const char *zReplacement){
   return rc;
 }
 
+#ifdef SQLITE_MATCHERTEXT_STRICT
+/* Legacy SQL entry points remain available only to SQLite's own parsers. */
+int sqlite3MatchertextInternalAllowed(sqlite3 *db){
+  Parse *pParse = db->pParse;
+  return db->init.busy
+      || db->nSqlExec                        /* inside OP_SqlExec: SQLite's own SQL */
+      || db->nMatchertextInternal
+      || (pParse!=0 && pParse->eParseMode!=PARSE_MODE_NORMAL);
+}
+
+/* Refuse a legacy SQL entry point unless SQLite itself is the caller.  The
+** caller state is read under the connection mutex, which every internal path
+** holds while that state is set, so one thread cannot pass for internal on the
+** strength of another thread's work.  An invalid connection is left to the
+** entry point's own misuse check. */
+int sqlite3MatchertextLegacyCheck(sqlite3 *db, const char *zReplacement){
+  int rc = SQLITE_OK;
+  if( !sqlite3SafetyCheckOk(db) ) return SQLITE_OK;
+  sqlite3_mutex_enter(db->mutex);
+  if( !sqlite3MatchertextLegacyAllowed(db) ){
+    rc = sqlite3MatchertextLegacyError(db, zReplacement);
+  }
+  sqlite3_mutex_leave(db->mutex);
+  return rc;
+}
+
+/* The internal prepare entry points.  Each marks the prepare internal and
+** holds the connection mutex across it.  sqlite3InternalExec() in legacy.c
+** prepares through these. */
+int sqlite3InternalPrepareV2(
+  sqlite3 *db,
+  const char *zSql,
+  int nByte,
+  sqlite3_stmt **ppStmt,
+  const char **pzTail
+){
+  int rc;
+  sqlite3_mutex_enter(db->mutex);
+  db->nMatchertextInternal++;
+  rc = sqlite3_prepare_v2(db, zSql, nByte, ppStmt, pzTail);
+  db->nMatchertextInternal--;
+  sqlite3_mutex_leave(db->mutex);
+  return rc;
+}
+int sqlite3InternalPrepareV3(
+  sqlite3 *db,
+  const char *zSql,
+  int nByte,
+  unsigned int prepFlags,
+  sqlite3_stmt **ppStmt,
+  const char **pzTail
+){
+  int rc;
+  sqlite3_mutex_enter(db->mutex);
+  db->nMatchertextInternal++;
+  rc = sqlite3_prepare_v3(db, zSql, nByte, prepFlags, ppStmt, pzTail);
+  db->nMatchertextInternal--;
+  sqlite3_mutex_leave(db->mutex);
+  return rc;
+}
+#endif /* SQLITE_MATCHERTEXT_STRICT */
+
 #endif /* SQLITE_MATCHERTEXT_SCANNER_ONLY */
 
 /*
 ** FINDEMBEDEND.  If z[0] opens an embedding "o m c" in zero-terminated text,
 ** locate c by matcher balance and return the total length of the embedding,
 ** so that the embedded value m is the nUsed-2 bytes at z[1] where nUsed is
-** the return value.  Return 0 if no embedding ends here, that is if z[0] is
-** not an opener at all, if the balance never returns to the level of z[0], if
-** a closer of the wrong kind arrives, or if the text ends first.
+** the return value.  Return 0 if z[0] is not an opener at all.  Return -1 if
+** z[0] opens an embedding that does not end here: the balance never returns
+** to the level of z[0], a closer of the wrong kind arrives, or the text ends
+** first.  The two failures differ for the caller: no opener means no hole,
+** while an opener without its closer is a hole that must not be read any
+** other way.
 **
 ** Deciding whether z[0] opens an embedding is left here rather than asked of
 ** the caller, so that the matcher pairs stay written down in exactly one
@@ -243,12 +299,12 @@ i64 sqlite3MatchertextEnd(const unsigned char *z){
 
   /* Anything other than a clean return to depth zero means the value is not
   ** matchertext, or the text ran out with openers still pending. */
-  if( mtScan(z+1, -1, &nUsed)!=0 ) return 0;
+  if( mtScan(z+1, -1, &nUsed)!=0 ) return -1;
 
   /* The boundary byte closes z[0] only if it is of the matching kind.  This
   ** also rejects the case where the text ended, since a zero byte classifies
   ** as a nonmatcher and can never equal -k. */
-  if( mtClass(z[1+nUsed])!= -k ) return 0;
+  if( mtClass(z[1+nUsed])!= -k ) return -1;
 
   return nUsed+2;
 }
@@ -330,8 +386,15 @@ static int mtUnescape(int c1, int c2, int c3){
 ** nothing, so a free-form field carrying "smile :]" or 'printf("[")' can
 ** still be placed in a hole.  The price is that the value is no longer
 ** verbatim, so a reader has to run FROMMATCHERTEXT to get the bytes back.
+**
+** bFull selects the alphabet, as for FROMMATCHERTEXT below.  Nonzero is the
+** value alphabet described above.  Zero is the name alphabet of [...], whose
+** decoder keeps every backslash: there the backslash stays as it is, and a
+** run of input that already reads as an escape, a backslash, 'o' or 'c' and
+** an adjacent matched pair, has that pair escaped instead, so that the run
+** decodes back to itself.
 */
-char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut){
+char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut, int bFull){
   unsigned char *aEsc;      /* aEsc[i] is true if z[i] must be escaped */
   char *zOut;
   i64 i, j, nOut;
@@ -375,13 +438,26 @@ char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut){
     }
   }
   while( d>0 ) aEsc[aStk[--d]] = 1;
+  if( !bFull ){
+    /* An unescaped opener here was pushed in pass one, so the adjacent closer
+    ** matched it, and escaping both keeps the output balanced.  An opener
+    ** already escaped at the depth limit breaks the run by itself. */
+    for(i=0; i+3<n; i++){
+      if( z[i]==MT_ESC && !aEsc[i+2]
+       && mtUnescape((unsigned char)z[i+1], (unsigned char)z[i+2],
+                     (unsigned char)z[i+3])!=0
+      ){
+        aEsc[i+2] = aEsc[i+3] = 1;
+      }
+    }
+  }
 
   /* Pass two: size the result, then fill it.  An escaped matcher costs three
   ** extra bytes and a backslash one. */
   nOut = n;
   for(i=0; i<n; i++){
     if( aEsc[i] ) nOut += 3;
-    else if( z[i]==MT_ESC ) nOut += 1;
+    else if( bFull && z[i]==MT_ESC ) nOut += 1;
   }
   zOut = sqlite3_malloc64((sqlite3_uint64)nOut + 1);
   if( zOut==0 ){
@@ -396,7 +472,7 @@ char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut){
       zOut[j++] = zEsc[0];
       zOut[j++] = zEsc[1];
       zOut[j++] = zEsc[2];
-    }else if( z[i]==MT_ESC ){
+    }else if( bFull && z[i]==MT_ESC ){
       zOut[j++] = MT_ESC;
       zOut[j++] = MT_ESC;
     }else{
@@ -481,7 +557,15 @@ char *sqlite3_matchertext_encode(const char *z, sqlite3_int64 n,
   if( z==0 ){ (void)SQLITE_MISUSE_BKPT; return 0; }
 #endif
   if( n<0 ) n = (i64)strlen(z);
-  return sqlite3MatchertextEncode(z, n, pn);
+  return sqlite3MatchertextEncode(z, n, pn, 1);
+}
+char *sqlite3_matchertext_encode_name(const char *z, sqlite3_int64 n,
+                                      sqlite3_int64 *pn){
+#ifdef SQLITE_ENABLE_API_ARMOR
+  if( z==0 ){ (void)SQLITE_MISUSE_BKPT; return 0; }
+#endif
+  if( n<0 ) n = (i64)strlen(z);
+  return sqlite3MatchertextEncode(z, n, pn, 0);
 }
 char *sqlite3_matchertext_decode(const char *z, sqlite3_int64 n,
                                  sqlite3_int64 *pn){
@@ -498,5 +582,67 @@ char *sqlite3_matchertext_decode(const char *z, sqlite3_int64 n,
   if( pn ) *pn = n;
   return zOut;
 }
+
+#ifndef SQLITE_MATCHERTEXT_SCANNER_ONLY
+/* True if stock SQLite reads the name hole [z[0..n-1]] as the same name this
+** build does: with no bracket inside, both end it at the same ']', and with
+** no backslash, there is no escape to decode. */
+static int mtStockName(const char *z, i64 n){
+  i64 i;
+  for(i=0; i<n; i++){
+    if( z[i]=='[' || z[i]==']' || z[i]==MT_ESC ) return 0;
+  }
+  return 1;
+}
+
+/*
+** Rewrite the holes of zSql, a statement from sqlite3DbMalloc() about to be
+** stored in the schema, into stock SQLite syntax, so that a database this
+** build writes stays readable by a build without matchertext.  A value hole
+** M'(...)' becomes a '...' literal of its value.  A name hole [...] stays as
+** it is when stock SQLite reads the same name from it, and becomes "..."
+** otherwise.  Return the result, which is zSql itself when nothing changes.
+** After an error zSql is freed and the return is 0: an OOM sets
+** db->mallocFailed, and a result too long is reported to the parser running,
+** if there is one.
+*/
+char *sqlite3MatchertextStockSql(sqlite3 *db, char *zSql){
+  StrAccum acc;
+  i64 i = 0;          /* Offset of the current token */
+  i64 iCopied = 0;    /* Bytes of zSql already appended to acc */
+  int bChanged = 0;   /* True once a hole is rewritten */
+
+  if( zSql==0 ) return 0;
+  sqlite3StrAccumInit(&acc, db, 0, 0, db->aLimit[SQLITE_LIMIT_LENGTH]);
+  while( zSql[i] && !db->mallocFailed ){
+    int tokenType;
+    i64 n = sqlite3GetToken((const u8*)&zSql[i], &tokenType);
+    int bName = tokenType==TK_ID && zSql[i]=='[';
+    if( tokenType==TK_MTSTRING
+     || (bName && !mtStockName(&zSql[i+1], n-2))
+    ){
+      i64 nBody = bName ? n-2 : n-5;
+      char *zBody = sqlite3DbStrNDup(db, &zSql[i + (bName ? 1 : 3)], nBody);
+      if( zBody ){
+        sqlite3MatchertextDecodeInPlace(zBody, nBody, !bName);
+        sqlite3_str_append(&acc, &zSql[iCopied], (int)(i-iCopied));
+        sqlite3_str_appendf(&acc, bName ? "\"%w\"" : "%Q", zBody);
+        sqlite3DbFree(db, zBody);
+        iCopied = i+n;
+        bChanged = 1;
+      }
+    }
+    i += n;
+  }
+  if( !bChanged && !db->mallocFailed ) return zSql;
+  sqlite3_str_append(&acc, &zSql[iCopied], (int)(i-iCopied));
+  sqlite3DbFree(db, zSql);
+  if( db->mallocFailed ){
+    sqlite3_str_reset(&acc);
+    return 0;
+  }
+  return sqlite3StrAccumFinish(&acc);
+}
+#endif /* SQLITE_MATCHERTEXT_SCANNER_ONLY */
 
 #endif /* SQLITE_ENABLE_MATCHERTEXT */

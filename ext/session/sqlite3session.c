@@ -1119,7 +1119,7 @@ static int sessionTableInfo(
     return SQLITE_NOMEM;
   }
 
-  rc = sqlite3_prepare_v2(db, zPragma, -1, &pStmt, 0);
+  rc = sqlite3InternalPrepareV2(db, zPragma, -1, &pStmt, 0);
   sqlite3_free(zPragma);
   if( rc!=SQLITE_OK ){
     return rc;
@@ -1540,7 +1540,7 @@ static int sessionPrepareDfltStmt(
     zSep = ", ";
   }
   if( rc==SQLITE_OK ){
-    rc = sqlite3_prepare_v2(db, (const char*)sql.aBuf, -1, ppStmt, 0);
+    rc = sqlite3InternalPrepareV2(db, (const char*)sql.aBuf, -1, ppStmt, 0);
   }
   sqlite3_free(sql.aBuf);
 
@@ -2148,7 +2148,7 @@ static int sessionDiffFindNew(
     rc = SQLITE_NOMEM;
   }else{
     sqlite3_stmt *pStmt;
-    rc = sqlite3_prepare_v2(pSession->db, zStmt, -1, &pStmt, 0);
+    rc = sqlite3InternalPrepareV2(pSession->db, zStmt, -1, &pStmt, 0);
     if( rc==SQLITE_OK ){
       SessionDiffCtx *pDiffCtx = (SessionDiffCtx*)pSession->hook.pCtx;
       pDiffCtx->pStmt = pStmt;
@@ -2211,7 +2211,7 @@ static int sessionDiffFindModified(
       rc = SQLITE_NOMEM;
     }else{
       sqlite3_stmt *pStmt;
-      rc = sqlite3_prepare_v2(pSession->db, zStmt, -1, &pStmt, 0);
+      rc = sqlite3InternalPrepareV2(pSession->db, zStmt, -1, &pStmt, 0);
 
       if( rc==SQLITE_OK ){
         SessionDiffCtx *pDiffCtx = (SessionDiffCtx*)pSession->hook.pCtx;
@@ -2278,7 +2278,7 @@ int sqlite3session_diff(
         rc = SQLITE_NOMEM;
       }else{
         sqlite3_stmt *pDbExists = 0;
-        rc = sqlite3_prepare_v2(db, zDbExists, -1, &pDbExists, 0);
+        rc = sqlite3InternalPrepareV2(db, zDbExists, -1, &pDbExists, 0);
         if( rc==SQLITE_ERROR ){
           rc = SQLITE_OK;
           nCol = -1;
@@ -2855,7 +2855,7 @@ static int sessionPrepare(
   char **pzErrmsg,
   const char *zSql
 ){
-  int rc = sqlite3_prepare_v2(db, zSql, -1, pp, 0);
+  int rc = sqlite3InternalPrepareV2(db, zSql, -1, pp, 0);
   if( pzErrmsg && rc!=SQLITE_OK ){
     *pzErrmsg = sqlite3_mprintf("%s", sqlite3_errmsg(db));
   }
@@ -3108,7 +3108,7 @@ static int sessionGenerateChangeset(
   if( pSession->rc ) return pSession->rc;
 
   sqlite3_mutex_enter(sqlite3_db_mutex(db));
-  rc = sqlite3_exec(pSession->db, "SAVEPOINT changeset", 0, 0, 0);
+  rc = sqlite3InternalExec(pSession->db, "SAVEPOINT changeset", 0, 0, 0);
   if( rc!=SQLITE_OK ){
     sqlite3_mutex_leave(sqlite3_db_mutex(db));
     return rc;
@@ -3198,7 +3198,7 @@ static int sessionGenerateChangeset(
   }
 
   sqlite3_free(buf.aBuf);
-  sqlite3_exec(db, "RELEASE changeset", 0, 0, 0);
+  sqlite3InternalExec(db, "RELEASE changeset", 0, 0, 0);
   sqlite3_mutex_leave(sqlite3_db_mutex(db));
   return rc;
 }
@@ -4496,7 +4496,7 @@ static int sessionUpdateFind(
 
         if( rc==SQLITE_OK ){
           char *zSql = (char*)buf.aBuf;
-          rc = sqlite3_prepare_v2(p->db, zSql, buf.nBuf, &pUp->pStmt, 0);
+          rc = sqlite3InternalPrepareV2(p->db, zSql, buf.nBuf, &pUp->pStmt, 0);
         }
 
         if( rc!=SQLITE_OK ){
@@ -5169,7 +5169,7 @@ static int sessionApplyOneWithRetry(
     ** before reattempting the INSERT.  */
     else if( bReplace ){
       assert( pIter->op==SQLITE_INSERT );
-      rc = sqlite3_exec(db, "SAVEPOINT replace_op", 0, 0, 0);
+      rc = sqlite3InternalExec(db, "SAVEPOINT replace_op", 0, 0, 0);
       if( rc==SQLITE_OK ){
         rc = sessionBindRow(pIter, 
             sqlite3changeset_new, pApply->nCol, pApply->abPK, pApply->pDelete);
@@ -5183,7 +5183,7 @@ static int sessionApplyOneWithRetry(
         rc = sessionApplyOneOp(pIter, pApply, xConflict, pCtx, 0, 0);
       }
       if( rc==SQLITE_OK ){
-        rc = sqlite3_exec(db, "RELEASE replace_op", 0, 0, 0);
+        rc = sqlite3InternalExec(db, "RELEASE replace_op", 0, 0, 0);
       }
     }
   }
@@ -5282,7 +5282,7 @@ static int sessionTableIsWithoutRowid(sqlite3 *db, const char *zTab, int *pbWR){
   if( zSql==0 ){
     rc = SQLITE_NOMEM;
   }else{
-    rc = sqlite3_prepare_v2(db, zSql, -1, &pList, 0);
+    rc = sqlite3InternalPrepareV2(db, zSql, -1, &pList, 0);
     sqlite3_free(zSql);
   }
 
@@ -5496,7 +5496,7 @@ static int sessionRetryConstraints(
         iSkip++;
       }
       if( iThis==iUpdate ){
-        rc = sqlite3_exec(db, "SAVEPOINT update_op", 0, 0, 0);
+        rc = sqlite3InternalExec(db, "SAVEPOINT update_op", 0, 0, 0);
         if( rc==SQLITE_OK ){
           rc = sessionUpdateToDeleteInsert(db, zTab, pApply, pUp, &pInsert);
         }
@@ -5529,7 +5529,7 @@ static int sessionRetryConstraints(
       sqlite3_step(pInsert);
       rc = sqlite3_finalize(pInsert);
       if( rc==SQLITE_CONSTRAINT ){
-        rc = sqlite3_exec(db, "ROLLBACK TO update_op", 0, 0, 0);
+        rc = sqlite3InternalExec(db, "ROLLBACK TO update_op", 0, 0, 0);
         sqlite3_free(pApply->constraints.aBuf);
         pApply->constraints = cons;
         memset(&cons, 0, sizeof(cons));
@@ -5537,7 +5537,7 @@ static int sessionRetryConstraints(
         iUpdate = 0;
       }
       if( rc==SQLITE_OK ){
-        rc = sqlite3_exec(db, "RELEASE update_op", 0, 0, 0);
+        rc = sqlite3InternalExec(db, "RELEASE update_op", 0, 0, 0);
       }
     }else{
       sqlite3_finalize(pInsert);
@@ -5610,10 +5610,10 @@ static int sessionChangesetApply(
   sApply.bIgnoreNoop = !!(flags & SQLITE_CHANGESETAPPLY_IGNORENOOP);
   sApply.bNoUpdateLoop = !!(flags & SQLITE_CHANGESETAPPLY_NOUPDATELOOP);
   if( (flags & SQLITE_CHANGESETAPPLY_NOSAVEPOINT)==0 ){
-    rc = sqlite3_exec(db, "SAVEPOINT changeset_apply", 0, 0, 0);
+    rc = sqlite3InternalExec(db, "SAVEPOINT changeset_apply", 0, 0, 0);
   }
   if( rc==SQLITE_OK ){
-    rc = sqlite3_exec(db, "PRAGMA defer_foreign_keys = 1", 0, 0, 0);
+    rc = sqlite3InternalExec(db, "PRAGMA defer_foreign_keys = 1", 0, 0, 0);
   }
   while( rc==SQLITE_OK && SQLITE_ROW==sqlite3changeset_next(pIter) ){
     int nCol;
@@ -5752,17 +5752,17 @@ static int sessionChangesetApply(
   }
 
   {
-    int rc2 = sqlite3_exec(db, "PRAGMA defer_foreign_keys = 0", 0, 0, 0);
+    int rc2 = sqlite3InternalExec(db, "PRAGMA defer_foreign_keys = 0", 0, 0, 0);
     if( rc==SQLITE_OK ) rc = rc2;
   }
 
   if( (flags & SQLITE_CHANGESETAPPLY_NOSAVEPOINT)==0 ){
     if( rc==SQLITE_OK ){
-      rc = sqlite3_exec(db, "RELEASE changeset_apply", 0, 0, 0);
+      rc = sqlite3InternalExec(db, "RELEASE changeset_apply", 0, 0, 0);
     }
     if( rc!=SQLITE_OK ){
-      sqlite3_exec(db, "ROLLBACK TO changeset_apply", 0, 0, 0);
-      sqlite3_exec(db, "RELEASE changeset_apply", 0, 0, 0);
+      sqlite3InternalExec(db, "ROLLBACK TO changeset_apply", 0, 0, 0);
+      sqlite3InternalExec(db, "RELEASE changeset_apply", 0, 0, 0);
     }
   }
 

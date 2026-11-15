@@ -2926,6 +2926,9 @@ void sqlite3EndTable(
       zStmt = sqlite3MPrintf(db,
           "CREATE %s %.*s", zType2, n, pParse->sNameToken.z
       );
+#ifdef SQLITE_ENABLE_MATCHERTEXT
+      zStmt = sqlite3MatchertextStockSql(db, zStmt);
+#endif
     }
 
     /* A slot for the record has already been allocated in the
@@ -4483,6 +4486,9 @@ void sqlite3CreateIndex(
         /* A named index with an explicit CREATE INDEX statement */
         zStmt = sqlite3MPrintf(db, "CREATE%s INDEX %.*s",
             onError==OE_None ? "" : " UNIQUE", n, pName->z);
+#ifdef SQLITE_ENABLE_MATCHERTEXT
+        zStmt = sqlite3MatchertextStockSql(db, zStmt);
+#endif
       }else{
         /* An automatic index created by a PRIMARY KEY or UNIQUE constraint */
         /* zStmt = sqlite3MPrintf(""); */

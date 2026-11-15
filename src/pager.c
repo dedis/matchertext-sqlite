@@ -7579,7 +7579,7 @@ int sqlite3PagerCheckpoint(
     ** sqlite3_wal_checkpoint() call, but it happens very rarely.
     ** https://sqlite.org/forum/forumpost/fd0f19d229156939
     */
-    sqlite3_exec(db, "PRAGMA table_list",0,0,0);
+    sqlite3InternalExec(db, "PRAGMA table_list",0,0,0);
   }
   if( pPager->pWal ){
     rc = sqlite3WalCheckpoint(pPager->pWal, db, eMode,

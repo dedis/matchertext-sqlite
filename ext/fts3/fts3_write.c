@@ -288,7 +288,7 @@ int sqlite3Fts3PrepareStmt(
          |((bAllowVtab==0) ? SQLITE_PREPARE_NO_VTAB : 0)
          |(bPersist ? SQLITE_PREPARE_PERSISTENT : 0);
 
-  return sqlite3_prepare_v3(p->db, zSql, -1, f, pp, NULL);
+  return sqlite3InternalPrepareV3(p->db, zSql, -1, f, pp, NULL);
 }
 
 /*
@@ -5842,15 +5842,15 @@ int sqlite3Fts3UpdateMethod(
 */
 int sqlite3Fts3Optimize(Fts3Table *p){
   int rc;
-  rc = sqlite3_exec(p->db, "SAVEPOINT fts3", 0, 0, 0);
+  rc = sqlite3InternalExec(p->db, "SAVEPOINT fts3", 0, 0, 0);
   if( rc==SQLITE_OK ){
     rc = fts3DoOptimize(p, 1);
     if( rc==SQLITE_OK || rc==SQLITE_DONE ){
-      int rc2 = sqlite3_exec(p->db, "RELEASE fts3", 0, 0, 0);
+      int rc2 = sqlite3InternalExec(p->db, "RELEASE fts3", 0, 0, 0);
       if( rc2!=SQLITE_OK ) rc = rc2;
     }else{
-      sqlite3_exec(p->db, "ROLLBACK TO fts3", 0, 0, 0);
-      sqlite3_exec(p->db, "RELEASE fts3", 0, 0, 0);
+      sqlite3InternalExec(p->db, "ROLLBACK TO fts3", 0, 0, 0);
+      sqlite3InternalExec(p->db, "RELEASE fts3", 0, 0, 0);
     }
   }
   sqlite3Fts3SegmentsClose(p);

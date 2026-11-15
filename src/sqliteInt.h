@@ -5983,10 +5983,11 @@ sqlite3_uint64 sqlite3Hwtime(void);
 i64 sqlite3MatchertextEnd(const unsigned char*);
 int sqlite3MatchertextVerify(const unsigned char*, i64);
 int sqlite3MatchertextVerifySql(const unsigned char*, i64);
-char *sqlite3MatchertextEncode(const char*, i64, i64*);
+char *sqlite3MatchertextEncode(const char*, i64, i64*, int);
 i64 sqlite3MatchertextDecodeInPlace(char*, i64, int);
-int sqlite3MatchertextInternalAllowed(sqlite3*);
 int sqlite3MatchertextLegacyError(sqlite3*, const char*);
+char *sqlite3MatchertextStockSql(sqlite3*, char*);
+i64 sqlite3GetStoredToken(const unsigned char*, int*);
 #if defined(SQLITE_TEST) || defined(SQLITE_MATCHERTEXT_TEST_BYPASS)
 extern int sqlite3MatchertextTestBypass;
 # define sqlite3MatchertextEnabled() (!sqlite3MatchertextTestBypass)
@@ -6005,6 +6006,26 @@ extern int sqlite3MatchertextTestBypass;
 #endif
 #define sqlite3MatchertextLegacyAllowed(D) \
   (!sqlite3MatchertextStrict() || sqlite3MatchertextInternalAllowed(D))
+#else
+# define sqlite3GetStoredToken sqlite3GetToken
+#endif
+
+/* SQL that SQLite composes itself, in the core or in an extension built into
+** the library, runs through these.  A strict matchertext build refuses the
+** plain entry points to every other caller. */
+#if defined(SQLITE_ENABLE_MATCHERTEXT) && defined(SQLITE_MATCHERTEXT_STRICT)
+int sqlite3MatchertextInternalAllowed(sqlite3*);
+int sqlite3MatchertextLegacyCheck(sqlite3*, const char*);
+int sqlite3InternalExec(sqlite3*, const char*, sqlite3_callback, void*, char**);
+int sqlite3InternalPrepareV2(sqlite3*, const char*, int, sqlite3_stmt**,
+                             const char**);
+int sqlite3InternalPrepareV3(sqlite3*, const char*, int, unsigned int,
+                             sqlite3_stmt**, const char**);
+#else
+# define sqlite3MatchertextLegacyCheck(D,Z) SQLITE_OK
+# define sqlite3InternalExec sqlite3_exec
+# define sqlite3InternalPrepareV2 sqlite3_prepare_v2
+# define sqlite3InternalPrepareV3 sqlite3_prepare_v3
 #endif
 
 #endif /* SQLITEINT_H */

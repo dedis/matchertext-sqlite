@@ -388,6 +388,9 @@ void sqlite3FinishTrigger(
     if( v==0 ) goto triggerfinish_cleanup;
     sqlite3BeginWriteOperation(pParse, 0, iDb);
     z = sqlite3DbStrNDup(db, (char*)pAll->z, pAll->n);
+#ifdef SQLITE_ENABLE_MATCHERTEXT
+    z = sqlite3MatchertextStockSql(db, z);
+#endif
     testcase( z==0 );
     sqlite3NestedParse(pParse,
        "INSERT INTO %Q." LEGACY_SCHEMA_TABLE

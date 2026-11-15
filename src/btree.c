@@ -3338,7 +3338,9 @@ static int lockBtree(BtShared *pBt){
     u32 usableSize;
     u8 *page1 = pPage1->aData;
     rc = SQLITE_NOTADB;
-    /* The first 16 bytes must match this build's file signature. */
+    /* EVIDENCE-OF: R-43737-39999 Every valid SQLite database file begins
+    ** with the following 16 bytes (in hex): 53 51 4c 69 74 65 20 66 6f 72 6d
+    ** 61 74 20 33 00. */
     if( memcmp(page1, zMagicHeader, 16)!=0 ){
       goto page1_init_failed;
     }

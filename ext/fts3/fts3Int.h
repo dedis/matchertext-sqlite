@@ -55,6 +55,22 @@ SQLITE_EXTENSION_INIT3
 #include "fts3_tokenizer.h"
 #include "fts3_hash.h"
 
+/* SQL that the extension composes itself.  Built into the library, it runs
+** through the internal entry points of sqliteInt.h, which a strict
+** matchertext build admits while it refuses the plain ones. */
+#if defined(SQLITE_CORE) && defined(SQLITE_ENABLE_MATCHERTEXT) \
+ && defined(SQLITE_MATCHERTEXT_STRICT)
+int sqlite3InternalExec(sqlite3*, const char*, sqlite3_callback, void*, char**);
+int sqlite3InternalPrepareV2(sqlite3*, const char*, int, sqlite3_stmt**,
+                             const char**);
+int sqlite3InternalPrepareV3(sqlite3*, const char*, int, unsigned int,
+                             sqlite3_stmt**, const char**);
+#elif !defined(sqlite3InternalExec)
+# define sqlite3InternalExec sqlite3_exec
+# define sqlite3InternalPrepareV2 sqlite3_prepare_v2
+# define sqlite3InternalPrepareV3 sqlite3_prepare_v3
+#endif
+
 /*
 ** This constant determines the maximum depth of an FTS expression tree
 ** that the library will create and use. FTS uses recursion to perform 

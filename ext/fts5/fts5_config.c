@@ -1065,7 +1065,7 @@ int sqlite3Fts5ConfigLoad(Fts5Config *pConfig, int iCookie){
 
   zSql = sqlite3Fts5Mprintf(&rc, zSelect, pConfig->zDb, pConfig->zName);
   if( zSql ){
-    rc = sqlite3_prepare_v2(pConfig->db, zSql, -1, &p, 0);
+    rc = sqlite3InternalPrepareV2(pConfig->db, zSql, -1, &p, 0);
     sqlite3_free(zSql);
   }
 

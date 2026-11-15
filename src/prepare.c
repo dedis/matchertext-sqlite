@@ -946,6 +946,8 @@ int sqlite3_matchertext_prepare_v3(
   char *zCopy = 0;
   char *zSql = 0;
   const char *zTail = 0;
+  char *zName;
+  i64 nName;
   int i = 0;
   int iArg = 0;
   int iBind = 0;
@@ -1037,9 +1039,20 @@ int sqlite3_matchertext_prepare_v3(
           rc = SQLITE_ERROR;
           goto matchertext_prepare_out;
         }
+        /* The name alphabet makes the identifier read back as these bytes,
+        ** even where they already look like an escape. */
+        zName = sqlite3MatchertextEncode((const char*)pArg->data,
+                                         (i64)pArg->size, &nName, 0);
+        if( zName==0 || nName>0x7fffffff ){
+          rc = zName==0 ? SQLITE_NOMEM_BKPT : SQLITE_TOOBIG;
+          sqlite3_free(zName);
+          sqlite3Error(db, rc);
+          goto matchertext_prepare_out;
+        }
         sqlite3_str_appendchar(pOut, 1, '[');
-        sqlite3_str_append(pOut, (const char*)pArg->data, (int)pArg->size);
+        sqlite3_str_append(pOut, zName, (int)nName);
         sqlite3_str_appendchar(pOut, 1, ']');
+        sqlite3_free(zName);
       }
       i += 2;
     }else{
@@ -1137,10 +1150,10 @@ int sqlite3_prepare(
 ){
   int rc;
 #ifdef SQLITE_ENABLE_MATCHERTEXT
-  if( sqlite3SafetyCheckOk(db) && !sqlite3MatchertextLegacyAllowed(db) ){
+  rc = sqlite3MatchertextLegacyCheck(db, "sqlite3_matchertext_prepare_v3()");
+  if( rc!=SQLITE_OK ){
     if( ppStmt ) *ppStmt = 0;
-    return sqlite3MatchertextLegacyError(db,
-        "sqlite3_matchertext_prepare_v3()");
+    return rc;
   }
 #endif
   rc = sqlite3LockAndPrepare(db,zSql,nBytes,0,0,ppStmt,pzTail);
@@ -1156,10 +1169,10 @@ int sqlite3_prepare_v2(
 ){
   int rc;
 #ifdef SQLITE_ENABLE_MATCHERTEXT
-  if( sqlite3SafetyCheckOk(db) && !sqlite3MatchertextLegacyAllowed(db) ){
+  rc = sqlite3MatchertextLegacyCheck(db, "sqlite3_matchertext_prepare_v3()");
+  if( rc!=SQLITE_OK ){
     if( ppStmt ) *ppStmt = 0;
-    return sqlite3MatchertextLegacyError(db,
-        "sqlite3_matchertext_prepare_v3()");
+    return rc;
   }
 #endif
   /* EVIDENCE-OF: R-37923-12173 The sqlite3_prepare_v2() interface works
@@ -1182,10 +1195,10 @@ int sqlite3_prepare_v3(
 ){
   int rc;
 #ifdef SQLITE_ENABLE_MATCHERTEXT
-  if( sqlite3SafetyCheckOk(db) && !sqlite3MatchertextLegacyAllowed(db) ){
+  rc = sqlite3MatchertextLegacyCheck(db, "sqlite3_matchertext_prepare_v3()");
+  if( rc!=SQLITE_OK ){
     if( ppStmt ) *ppStmt = 0;
-    return sqlite3MatchertextLegacyError(db,
-        "sqlite3_matchertext_prepare_v3()");
+    return rc;
   }
 #endif
   /* EVIDENCE-OF: R-56861-42673 sqlite3_prepare_v3() differs from
@@ -1286,10 +1299,11 @@ int sqlite3_prepare16(
 ){
   int rc;
 #ifdef SQLITE_ENABLE_MATCHERTEXT
-  if( sqlite3SafetyCheckOk(db) && !sqlite3MatchertextLegacyAllowed(db) ){
+  rc = sqlite3MatchertextLegacyCheck(db,
+      "sqlite3_matchertext_prepare_v3() with UTF-8 input");
+  if( rc!=SQLITE_OK ){
     if( ppStmt ) *ppStmt = 0;
-    return sqlite3MatchertextLegacyError(db,
-        "sqlite3_matchertext_prepare_v3() with UTF-8 input");
+    return rc;
   }
 #endif
   rc = sqlite3Prepare16(db,zSql,nBytes&~1,0,ppStmt,pzTail);
@@ -1305,10 +1319,11 @@ int sqlite3_prepare16_v2(
 ){
   int rc;
 #ifdef SQLITE_ENABLE_MATCHERTEXT
-  if( sqlite3SafetyCheckOk(db) && !sqlite3MatchertextLegacyAllowed(db) ){
+  rc = sqlite3MatchertextLegacyCheck(db,
+      "sqlite3_matchertext_prepare_v3() with UTF-8 input");
+  if( rc!=SQLITE_OK ){
     if( ppStmt ) *ppStmt = 0;
-    return sqlite3MatchertextLegacyError(db,
-        "sqlite3_matchertext_prepare_v3() with UTF-8 input");
+    return rc;
   }
 #endif
   rc = sqlite3Prepare16(db,zSql,nBytes&~1,SQLITE_PREPARE_SAVESQL,ppStmt,pzTail);
@@ -1325,10 +1340,11 @@ int sqlite3_prepare16_v3(
 ){
   int rc;
 #ifdef SQLITE_ENABLE_MATCHERTEXT
-  if( sqlite3SafetyCheckOk(db) && !sqlite3MatchertextLegacyAllowed(db) ){
+  rc = sqlite3MatchertextLegacyCheck(db,
+      "sqlite3_matchertext_prepare_v3() with UTF-8 input");
+  if( rc!=SQLITE_OK ){
     if( ppStmt ) *ppStmt = 0;
-    return sqlite3MatchertextLegacyError(db,
-        "sqlite3_matchertext_prepare_v3() with UTF-8 input");
+    return rc;
   }
 #endif
   rc = sqlite3Prepare16(db,zSql,nBytes&~1,

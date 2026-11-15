@@ -136,22 +136,24 @@ do_test 1.11.2 { sqlite3_matchertext_end {('; DROP TABLE t; --)} } 21
 # later one lies outside it
 do_test 1.12.1 { sqlite3_matchertext_end {(a)b)} } 3
 
-# 1.13: rejections.  Each fails closed: no embedding ends here.
+# 1.13: rejections.  Each fails closed: no embedding ends here.  An opener
+# whose embedding does not end is -1, so that a caller can refuse the hole;
+# text that opens nothing is 0.
 #
 # Written with quoted strings rather than braces, because several of these
 # values carry an unmatched brace and so cannot be brace quoted in TCL.
-foreach {tn text} [list \
-  1  "(a]b)"   \
-  2  "(\}"     \
-  3  "(abc"    \
-  4  "(a(b"    \
-  5  "(\[)\]"  \
-  6  "("       \
-  7  "abc"     \
-  8  ")a("     \
-  9  ""        \
+foreach {tn text res} [list \
+  1  "(a]b)"   -1 \
+  2  "(\}"     -1 \
+  3  "(abc"    -1 \
+  4  "(a(b"    -1 \
+  5  "(\[)\]"  -1 \
+  6  "("       -1 \
+  7  "abc"     0  \
+  8  ")a("     0  \
+  9  ""        0  \
 ] {
-  do_test 1.13.$tn { sqlite3_matchertext_end $text } 0
+  do_test 1.13.$tn { sqlite3_matchertext_end $text } $res
 }
 
 # 1.14: the depth limit.  Input nested more deeply is rejected rather than
@@ -171,7 +173,7 @@ do_test 1.14.3 {
 } [expr 2*($MTDEPTH+1)]
 do_test 1.14.4 {
   sqlite3_matchertext_end [mt_nest [expr $MTDEPTH+2]]
-} 0
+} -1
 
 #-------------------------------------------------------------------------
 # 2.*: The tokenizer.
@@ -211,16 +213,17 @@ do_test 2.6.1 { execsql {SELECT M'((a))'} } {(a)}
 do_test 2.6.2 { execsql {SELECT M'(a(b(c)d)e)'} } {a(b(c)d)e}
 do_test 2.6.3 { execsql {SELECT M'([{}])'} } [list "\[{}\]"]
 
-# 2.7: an ill-formed literal is not a literal.  The tokenizer falls through
-# and lexes the M as the identifier it has always been, so these fail the way
-# an unknown column does rather than as a new class of error.
-foreach {tn sql} {
-  1  {SELECT M'(unbalanced'}
-  2  {SELECT M'(a]b)'}
-  3  {SELECT M'(a)b)'}
-  4  {SELECT M'abc'}
+# 2.7: a hole that opens and does not close is an error.  Reading it as the
+# identifier M and a quoted string would let the quote rules decide where the
+# value ends.  Without an opener there is no hole, and M'abc' keeps its old
+# reading.
+foreach {tn sql res} {
+  1  {SELECT M'(unbalanced'}  {unrecognized token: "M'("}
+  2  {SELECT M'(a]b)'}        {unrecognized token: "M'("}
+  3  {SELECT M'(a)b)'}        {unrecognized token: "M'(a)"}
+  4  {SELECT M'abc'}          {no such column: M}
 } {
-  do_catchsql_test 2.7.$tn $sql {1 {no such column: M}}
+  do_catchsql_test 2.7.$tn $sql [list 1 $res]
 }
 
 # 2.8: the M must abut the quote.  With a space between them this is the
@@ -687,12 +690,14 @@ do_test 9.1.2 {
 } [list {' OR '1'='1}]
 
 # 9.2: ALTER TABLE RENAME rewrites the stored text of a view.  The table name
-# must change and the value must not.
+# must change and the value must not.  The view is stored as stock SQL, so
+# the value hole is a single-quoted literal there.
 #
 # The value holds double quotes on purpose. renameQuotefixExprCb() in alter.c
 # rewrites double-quoted string literals to single-quoted ones, and it fires on
-# TK_STRING carrying EP_DblQuoted. A matchertext literal never carries that
-# flag, so the value is left alone.
+# TK_STRING carrying EP_DblQuoted. Neither a matchertext literal nor the
+# single-quoted literal stored for it carries that flag, so the value is left
+# alone.
 do_execsql_test 9.2.1 {
   CREATE VIEW v9 AS SELECT name, M'("q" ; --)' AS tag FROM t9;
   SELECT DISTINCT tag FROM v9;
@@ -700,7 +705,7 @@ do_execsql_test 9.2.1 {
 do_test 9.2.2 {
   execsql {ALTER TABLE t9 RENAME TO t9b}
   execsql {SELECT sql FROM sqlite_schema WHERE name='v9'}
-} [list {CREATE VIEW v9 AS SELECT name, M'("q" ; --)' AS tag FROM "t9b"}]
+} [list {CREATE VIEW v9 AS SELECT name, '"q" ; --' AS tag FROM "t9b"}]
 do_execsql_test 9.2.3 {
   SELECT DISTINCT tag FROM v9;
 } {{"q" ; --}}
@@ -882,6 +887,25 @@ do_test 10.12.4 {
 } {a\o()b}
 do_test 10.12.5 { sqlite3_matchertext_encode {} } {}
 
+# 10.13: the name encoder.  A [...] name keeps its backslashes, so this
+# encoder leaves them alone and escapes the matched pair of any text that
+# already reads as an escape.  The name SQLite reads back is the input.
+do_test 10.13.1 { sqlite3_matchertext_encode_name {a\b} } {a\b}
+do_test 10.13.2 { sqlite3_matchertext_encode_name {\o()} } {\o\o()\c()}
+do_test 10.13.3 { sqlite3_matchertext_encode_name {x]y} } {x\c[]y}
+foreach {tn name} {
+  1  {a\b}
+  2  {\o()}
+  3  {x]y}
+  4  {\c[]z(}
+  5  {plain}
+} {
+  do_test 10.13.4.$tn {
+    db eval "SELECT 1 AS \[[sqlite3_matchertext_encode_name $name]\]" r {}
+    set r(*)
+  } [list $name]
+}
+
 #-------------------------------------------------------------------------
 # 11.*: Checked SQL entry and typed composition.
 #
@@ -938,6 +962,14 @@ do_test 11.1.3 {
 do_test 11.1.4 {
   sqlite3_matchertext_exec db {SELECT name FROM ?I ORDER BY name} I users
 } {alice bob}
+# ?I writes the name with the name encoder, so a name that reads as an
+# escape names exactly itself.
+do_test 11.1.5 {
+  sqlite3_matchertext_exec db {CREATE TABLE ?I(x)} I {e\o()}
+  sqlite3_matchertext_exec db {
+    SELECT name FROM sqlite_schema WHERE name=?V
+  } V {e\o()}
+} {{e\o()}}
 
 # ?V is a bound value. SQL syntax in a valid value stays data.
 do_test 11.2.1 {
@@ -1071,6 +1103,130 @@ ifcapable deserialize {
 do_test 12.2.1 {
   sqlite3_matchertext_exec db {SELECT "nosuchcol11"}
 } {nosuchcol11}
+
+# 12.3: the SQL that SQLite's own extensions and table-valued pragmas compose
+# is internal too, whether it runs when a table is created or when it is read.
+do_test 12.3.1 {
+  sqlite3_matchertext_exec db {SELECT count(*) FROM pragma_table_info(?V)} V v11
+} {1}
+ifcapable fts5 {
+  do_test 12.3.2 {
+    sqlite3_matchertext_exec db {CREATE VIRTUAL TABLE f12 USING fts5(x)}
+    sqlite3_matchertext_exec db {INSERT INTO f12 VALUES(?V)} V {hello world}
+    sqlite3_matchertext_exec db {
+      SELECT count(*) FROM f12 WHERE f12 MATCH ?V
+    } V hello
+  } {1}
+}
+ifcapable fts3 {
+  do_test 12.3.3 {
+    sqlite3_matchertext_exec db {CREATE VIRTUAL TABLE g12 USING fts4(x)}
+    sqlite3_matchertext_exec db {INSERT INTO g12 VALUES(?V)} V {hello world}
+    sqlite3_matchertext_exec db {
+      SELECT count(*) FROM g12 WHERE g12 MATCH ?V
+    } V hello
+  } {1}
+}
+ifcapable rtree {
+  do_test 12.3.4 {
+    sqlite3_matchertext_exec db {CREATE VIRTUAL TABLE r12 USING rtree(id,a,b)}
+    sqlite3_matchertext_exec db {INSERT INTO r12 VALUES(1,0,1)}
+    sqlite3_matchertext_exec db {SELECT count(*) FROM r12 WHERE a<0.5}
+  } {1}
+}
+ifcapable fts5&&rtree {
+  do_test 12.3.5 {
+    db close
+    sqlite3 db test11.db
+    list [sqlite3_matchertext_exec db {
+      SELECT count(*) FROM f12 WHERE f12 MATCH ?V
+    } V world] [sqlite3_matchertext_exec db {SELECT count(*) FROM r12}]
+  } {1 1}
+}
+ifcapable session {
+  proc mt_omit_conflict {args} { return OMIT }
+  do_test 12.3.6 {
+    sqlite3_matchertext_exec db {CREATE TABLE s12(a PRIMARY KEY, b)}
+    sqlite3session S db main
+    S attach s12
+    sqlite3_matchertext_exec db {INSERT INTO s12 VALUES(1, ?V)} V x
+    set cs [S changeset]
+    S delete
+    sqlite3_matchertext_exec db {DELETE FROM s12}
+    sqlite3changeset_apply db $cs mt_omit_conflict
+    sqlite3_matchertext_exec db {SELECT b FROM s12}
+  } {x}
+}
+
+# 12.3.9: only the prepares of SQLite's own SQL are internal.  App code that
+# runs while that SQL steps, here a commit hook fired by the internal COMMIT of
+# sqlite3changeset_apply() and of sqlite3_serialize(), still meets the strict
+# check.
+ifcapable session&&deserialize {
+  proc mt_hook {db} {
+    if {[catch {sqlite3_prepare_v2 $db {SELECT 1} -1 tail} stmt]} {
+      lappend ::mt_hook_res refused
+    } else {
+      sqlite3_finalize $stmt
+      lappend ::mt_hook_res admitted
+    }
+    return 0
+  }
+  do_test 12.3.9 {
+    set ::mt_hook_res {}
+    sqlite3session S db main
+    S attach s12
+    sqlite3_matchertext_exec db {INSERT INTO s12 VALUES(2, ?V)} V y
+    set cs [S changeset]
+    S delete
+    sqlite3_matchertext_exec db {DELETE FROM s12 WHERE a=2}
+    db commit_hook [list mt_hook db]
+    set ::mt_hook_res {}
+    sqlite3changeset_apply db $cs mt_omit_conflict
+    db commit_hook {}
+    sqlite3 m12 :memory:
+    m12 commit_hook [list mt_hook m12]
+    m12 serialize
+    m12 close
+    set ::mt_hook_res
+  } {refused refused}
+}
+ifcapable rbu {
+  # RBU opens its own connections to the target and the update database, and
+  # runs its SQL on them.  The update value holds a quote and a pair, which
+  # its SQL must carry as data.
+  proc mt_rbu_run {} {
+    for {set i 0} {$i<1000 && [rbu step]=="SQLITE_OK"} {incr i} {}
+    rbu close
+  }
+  do_test 12.3.7 {
+    forcedelete rbu12t.db rbu12u.db
+    sqlite3 t12 rbu12t.db
+    sqlite3_matchertext_exec t12 {CREATE TABLE t1(a INTEGER PRIMARY KEY, b)}
+    t12 close
+    sqlite3 u12 rbu12u.db
+    sqlite3_matchertext_exec u12 {CREATE TABLE data_t1(a, b, rbu_control)}
+    sqlite3_matchertext_exec u12 {
+      INSERT INTO data_t1 VALUES(1, ?V, 0)
+    } V {it's (x)}
+    u12 close
+    sqlite3rbu rbu rbu12t.db rbu12u.db
+    set rc [mt_rbu_run]
+    sqlite3 t12 rbu12t.db
+    set res [list $rc [sqlite3_matchertext_exec t12 {SELECT b FROM t1}]]
+    t12 close
+    set res
+  } {SQLITE_DONE {{it's (x)}}}
+  do_test 12.3.8 {
+    forcedelete rbu12s.db
+    sqlite3rbu_vacuum rbu rbu12t.db rbu12s.db
+    set rc [mt_rbu_run]
+    sqlite3 t12 rbu12t.db
+    set res [list $rc [sqlite3_matchertext_exec t12 {PRAGMA integrity_check}]]
+    t12 close
+    set res
+  } {SQLITE_DONE ok}
+}
 
 #-------------------------------------------------------------------------
 # 13.*: Legacy entry points and removed runtime controls.
@@ -1308,12 +1464,81 @@ do_test 15.6.1 {
 # error repeats the value back in full, which is what says no part of it was
 # read as syntax.
 do_test 15.6.2 {
-  set enc [sqlite3_matchertext_encode {name] FROM sqlite_schema --[}]
+  set enc [sqlite3_matchertext_encode_name {name] FROM sqlite_schema --[}]
   catchsql "SELECT \[$enc\] FROM t15b"
 } {1 {no such column: name] FROM sqlite_schema --[}}
 do_test 15.6.3 {
-  set enc [sqlite3_matchertext_encode {odd name}]
+  set enc [sqlite3_matchertext_encode_name {odd name}]
   execsql "SELECT \[$enc\] FROM t15b"
 } {x}
+
+#-------------------------------------------------------------------------
+# 16.*: Stored schema text.
+#
+# The schema keeps each CREATE statement as text.  A hole there would make the
+# database unreadable to a build without matchertext, so the text is stored
+# as stock SQL: a value hole as a '...' literal of its value, and a name hole
+# as "..." where stock SQLite would read another name from it.
+
+do_execsql_test 16.1.1 {
+  CREATE TABLE t16(a DEFAULT M'(it's ; --)', [b[1]], [c\o()], [d(1)]);
+  SELECT sql FROM sqlite_schema WHERE name='t16';
+} {{CREATE TABLE t16(a DEFAULT 'it''s ; --', "b[1]", "c(", [d(1)])}}
+do_execsql_test 16.1.2 {
+  CREATE INDEX t16i ON t16([b[1]]) WHERE a<>M'(x)';
+  CREATE TRIGGER t16t AFTER INSERT ON t16 BEGIN SELECT M'(t;)'; END;
+  SELECT sql FROM sqlite_schema WHERE name IN ('t16i','t16t') ORDER BY name;
+} [list \
+  {CREATE INDEX t16i ON t16("b[1]") WHERE a<>'x'} \
+  {CREATE TRIGGER t16t AFTER INSERT ON t16 BEGIN SELECT 't;'; END} \
+]
+do_execsql_test 16.1.3 {
+  ALTER TABLE t16 ADD COLUMN e DEFAULT M'(added)';
+  ALTER TABLE t16 ADD CONSTRAINT c16 CHECK( a<>M'(bad)' );
+  SELECT count(*) FROM sqlite_schema WHERE sql LIKE '%M''(%';
+} {0}
+do_test 16.1.4 {
+  db close
+  sqlite3 db test.db
+  execsql {
+    INSERT INTO t16([d(1)]) VALUES(1);
+    SELECT a, e FROM t16;
+  }
+} {{it's ; --} added}
+do_execsql_test 16.1.5 {
+  SELECT name FROM pragma_table_info('t16') ORDER BY cid;
+} {a b[1] c( d(1) e}
+do_catchsql_test 16.1.6 {
+  INSERT INTO t16(a) VALUES('bad');
+} {1 {CHECK constraint failed: c16}}
+
+# 16.2: stored text from a build without matchertext may hold a [name] whose
+# brackets do not balance.  It reads the stock way, while the same name in new
+# SQL stays an error.
+do_test 16.2.1 {
+  execsql {
+    CREATE TABLE t16b(x);
+    PRAGMA writable_schema=ON;
+    UPDATE sqlite_schema SET sql='CREATE TABLE t16b([y[] INT)'
+     WHERE name='t16b';
+    PRAGMA writable_schema=OFF;
+  }
+  db close
+  sqlite3 db test.db
+  execsql {
+    INSERT INTO t16b VALUES(5);
+    SELECT * FROM t16b;
+  }
+} {5}
+do_test 16.2.2 {
+  expr {[execsql {SELECT name FROM pragma_table_info('t16b')}] eq [list {y[}]}
+} {1}
+do_test 16.2.3 {
+  execsql {ALTER TABLE t16b RENAME TO t16c}
+  execsql {SELECT sql FROM sqlite_schema WHERE name='t16c'}
+} {{CREATE TABLE "t16c"([y[] INT)}}
+do_catchsql_test 16.2.4 {
+  SELECT [y[] FROM t16c;
+} {1 {unrecognized token: "[y["}}
 
 finish_test

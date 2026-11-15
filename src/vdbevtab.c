@@ -350,7 +350,7 @@ static int bytecodevtabFilter(
     if( zSql==0 ){
       rc = SQLITE_NOMEM;
     }else{
-      rc = sqlite3_prepare_v2(pVTab->db, zSql, -1, &pCur->pStmt, 0);
+      rc = sqlite3InternalPrepareV2(pVTab->db, zSql, -1, &pCur->pStmt, 0);
       pCur->needFinalize = 1;
     }
   }else{

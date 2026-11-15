@@ -790,7 +790,7 @@ static int statFilter(
   if( zSql==0 ){
     return SQLITE_NOMEM_BKPT;
   }else{
-    rc = sqlite3_prepare_v2(pTab->db, zSql, -1, &pCsr->pStmt, 0);
+    rc = sqlite3InternalPrepareV2(pTab->db, zSql, -1, &pCsr->pStmt, 0);
     sqlite3_free(zSql);
   }
 

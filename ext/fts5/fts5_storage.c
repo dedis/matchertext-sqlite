@@ -199,7 +199,7 @@ static int fts5StorageGetStmt(
       int f = SQLITE_PREPARE_PERSISTENT;
       if( eStmt>FTS5_STMT_LOOKUP2 ) f |= SQLITE_PREPARE_NO_VTAB;
       p->pConfig->bLock++;
-      rc = sqlite3_prepare_v3(pC->db, zSql, -1, f, &p->aStmt[eStmt], 0);
+      rc = sqlite3InternalPrepareV3(pC->db, zSql, -1, f, &p->aStmt[eStmt], 0);
       p->pConfig->bLock--;
       sqlite3_free(zSql);
       if( rc!=SQLITE_OK && pzErrMsg ){
@@ -235,7 +235,7 @@ static int fts5ExecPrintf(
   if( zSql==0 ){
     rc = SQLITE_NOMEM;
   }else{
-    rc = sqlite3_exec(db, zSql, 0, 0, pzErr);
+    rc = sqlite3InternalExec(db, zSql, 0, 0, pzErr);
     sqlite3_free(zSql);
   }
 
@@ -1110,7 +1110,7 @@ static int fts5StorageCount(Fts5Storage *p, const char *zSuffix, i64 *pnRow){
     rc = SQLITE_NOMEM;
   }else{
     sqlite3_stmt *pCnt = 0;
-    rc = sqlite3_prepare_v2(pConfig->db, zSql, -1, &pCnt, 0);
+    rc = sqlite3InternalPrepareV2(pConfig->db, zSql, -1, &pCnt, 0);
     if( rc==SQLITE_OK ){
       if( SQLITE_ROW==sqlite3_step(pCnt) ){
         *pnRow = sqlite3_column_int64(pCnt, 0);

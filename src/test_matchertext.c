@@ -219,9 +219,12 @@ static int SQLITE_TCLAPI test_matchertext_recode(
     return TCL_ERROR;
   }
   zVal = Tcl_GetByteArrayFromObj(objv[1], &nVal);
-  if( clientData ){
+  if( clientData==(void*)1 ){
     zOut = sqlite3_matchertext_decode((const char*)zVal, (sqlite3_int64)nVal,
                                       &nOut);
+  }else if( clientData==(void*)2 ){
+    zOut = sqlite3_matchertext_encode_name((const char*)zVal,
+                                           (sqlite3_int64)nVal, &nOut);
   }else{
     zOut = sqlite3_matchertext_encode((const char*)zVal, (sqlite3_int64)nVal,
                                       &nOut);
@@ -291,6 +294,7 @@ int Sqlitetest_matchertext_Init(Tcl_Interp *interp){
     { "sqlite3_matchertext_printf", test_matchertext_printf, 0 },
     { "sqlite3_matchertext_encode", test_matchertext_recode, 0 },
     { "sqlite3_matchertext_decode", test_matchertext_recode, (void*)1 },
+    { "sqlite3_matchertext_encode_name", test_matchertext_recode, (void*)2 },
     { "sqlite3_matchertext_exec",   test_matchertext_exec, 0 },
     { "sqlite3_matchertext_test_bypass", test_matchertext_bypass, 0 },
   };

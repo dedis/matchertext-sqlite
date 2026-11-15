@@ -374,6 +374,13 @@ void sqlite3_str_vappendf(
     }while( !done && (c=(*++fmt))!=0 );
 
     /* Fetch the info entry for the field */
+#ifdef SQLITE_ENABLE_MATCHERTEXT
+    if( c=='m' ){
+      infop = &mtFmtInfo;
+      xtype = etESCAPE_m;
+    }else
+#endif
+    {
 #ifdef SQLITE_EBCDIC
     /* The hash table only works for ASCII.  For EBCDIC, we need to do
     ** a linear search of the table */
@@ -387,13 +394,6 @@ void sqlite3_str_vappendf(
       }
     }
 #else
-#ifdef SQLITE_ENABLE_MATCHERTEXT
-    if( c=='m' ){
-      infop = &mtFmtInfo;
-      xtype = etESCAPE_m;
-    }else
-#endif
-    {
     /* Fast hash-table lookup */
     assert( ArraySize(fmtinfo)==25 );
     idx = ((unsigned)c) % 25;
@@ -406,8 +406,8 @@ void sqlite3_str_vappendf(
       infop = &fmtinfo[0];
       xtype = etINVALID;
     }
-    }
 #endif
+    }
 
     /*
     ** At this point, variables are initialized as follows:
@@ -989,7 +989,7 @@ void sqlite3_str_vappendf(
         }
         nVal = (i64)strlen(zVal);
         if( precision>=0 && precision<nVal ) nVal = precision;
-        zVal = sqlite3MatchertextEncode(zVal, nVal, &nVal);
+        zVal = sqlite3MatchertextEncode(zVal, nVal, &nVal, 1);
         if( zVal==0 ){
           sqlite3StrAccumSetError(pAccum, SQLITE_NOMEM);
           return;

@@ -1563,7 +1563,7 @@ static int geopolyColumn(sqlite3_vtab_cursor *cur, sqlite3_context *ctx, int i){
   if( i<=pRtree->nAux ){
     if( !pCsr->bAuxValid ){
       if( pCsr->pReadAux==0 ){
-        rc = sqlite3_prepare_v3(pRtree->db, pRtree->zReadAuxSql, -1, 0,
+        rc = sqlite3InternalPrepareV3(pRtree->db, pRtree->zReadAuxSql, -1, 0,
                                 &pCsr->pReadAux, 0);
         if( rc ) return rc;
       }
