@@ -312,7 +312,6 @@ i64 sqlite3MatchertextEnd(const unsigned char *z){
 /*
 ** The escape alphabet used by TOMATCHERTEXT and FROMMATCHERTEXT below.
 **
-**   \\     a literal backslash
 **   \o()   \c()   a literal '(' or ')'
 **   \o[]   \c[]   a literal '[' or ']'
 **   \o{}   \c{}   a literal '{' or '}'
@@ -337,9 +336,10 @@ i64 sqlite3MatchertextEnd(const unsigned char *z){
 ** hesc to the weaker "forall c, MT Pi (esc c)" would cover them, and esc_mt
 ** becomes one way of discharging it rather than the only way.
 **
-** The backslash is the introducer.  It is escaped unconditionally, which is
-** what makes the encoding injective: a value that already reads like an
-** escape encodes to something that decodes back to itself.
+** The backslash is the introducer.  It is not escaped itself: a backslash
+** decodes as an escape only before 'o' or 'c' and an adjacent matched pair,
+** so the encoder escapes that pair where the input already reads as an
+** escape, and every other backslash passes through as an ordinary byte.
 */
 #define MT_ESC '\\'
 
@@ -375,26 +375,22 @@ static int mtUnescape(int c1, int c2, int c3){
 ** sqlite3_malloc64(), or 0 if allocation fails, and write its length to
 ** *pnOut when pnOut is not 0.  The caller frees it with sqlite3_free().
 **
-** Only unmatched matchers are escaped, and the backslash that introduces an
-** escape.  A value whose matchers already balance and which holds no
-** backslash therefore passes through byte for byte, which is what keeps the
-** common case readable in the SQL text.  Exception: nesting at the depth
-** limit exactly gets its deepest pair escaped; see pass one below.
+** Only unmatched matchers are escaped, and the matched pair of any run that
+** already reads as an escape, a backslash, 'o' or 'c' and an adjacent matched
+** pair, so that the run decodes back to itself.  A value whose matchers
+** already balance and which holds no such run therefore passes through byte
+** for byte, which is what keeps the common case readable in the SQL text.
+** Exception: nesting at the depth limit exactly gets its deepest pair
+** escaped; see pass one below.
 **
 ** This is the total counterpart of VERIFY.  VERIFY answers whether a value
 ** may embed as it stands and refuses the ones that may not; this refuses
 ** nothing, so a free-form field carrying "smile :]" or 'printf("[")' can
 ** still be placed in a hole.  The price is that the value is no longer
 ** verbatim, so a reader has to run FROMMATCHERTEXT to get the bytes back.
-**
-** bFull selects the alphabet, as for FROMMATCHERTEXT below.  Nonzero is the
-** value alphabet described above.  Zero is the name alphabet of [...], whose
-** decoder keeps every backslash: there the backslash stays as it is, and a
-** run of input that already reads as an escape, a backslash, 'o' or 'c' and
-** an adjacent matched pair, has that pair escaped instead, so that the run
-** decodes back to itself.
+** The value hole M'(...)' and the name hole [...] share this one alphabet.
 */
-char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut, int bFull){
+char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut){
   unsigned char *aEsc;      /* aEsc[i] is true if z[i] must be escaped */
   char *zOut;
   i64 i, j, nOut;
@@ -438,26 +434,24 @@ char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut, int bFull){
     }
   }
   while( d>0 ) aEsc[aStk[--d]] = 1;
-  if( !bFull ){
-    /* An unescaped opener here was pushed in pass one, so the adjacent closer
-    ** matched it, and escaping both keeps the output balanced.  An opener
-    ** already escaped at the depth limit breaks the run by itself. */
-    for(i=0; i+3<n; i++){
-      if( z[i]==MT_ESC && !aEsc[i+2]
-       && mtUnescape((unsigned char)z[i+1], (unsigned char)z[i+2],
-                     (unsigned char)z[i+3])!=0
-      ){
-        aEsc[i+2] = aEsc[i+3] = 1;
-      }
+  /* A run that already reads as an escape keeps its backslash and has its
+  ** pair escaped.  An unescaped opener here was pushed in pass one, so the
+  ** adjacent closer matched it, and escaping both keeps the output balanced.
+  ** An opener already escaped at the depth limit breaks the run by itself. */
+  for(i=0; i+3<n; i++){
+    if( z[i]==MT_ESC && !aEsc[i+2]
+     && mtUnescape((unsigned char)z[i+1], (unsigned char)z[i+2],
+                   (unsigned char)z[i+3])!=0
+    ){
+      aEsc[i+2] = aEsc[i+3] = 1;
     }
   }
 
   /* Pass two: size the result, then fill it.  An escaped matcher costs three
-  ** extra bytes and a backslash one. */
+  ** extra bytes. */
   nOut = n;
   for(i=0; i<n; i++){
     if( aEsc[i] ) nOut += 3;
-    else if( bFull && z[i]==MT_ESC ) nOut += 1;
   }
   zOut = sqlite3_malloc64((sqlite3_uint64)nOut + 1);
   if( zOut==0 ){
@@ -472,9 +466,6 @@ char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut, int bFull){
       zOut[j++] = zEsc[0];
       zOut[j++] = zEsc[1];
       zOut[j++] = zEsc[2];
-    }else if( bFull && z[i]==MT_ESC ){
-      zOut[j++] = MT_ESC;
-      zOut[j++] = MT_ESC;
     }else{
       zOut[j++] = z[i];
     }
@@ -492,26 +483,19 @@ char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut, int bFull){
 ** sqlite3_malloc64(), or 0 if allocation fails, and write its length to
 ** *pnOut when pnOut is not 0.
 **
-** A backslash that does not introduce one of the escapes above is copied
-** through unchanged.  The encoder never produces such a sequence, since it
-** doubles every backslash, so this only affects text written by hand, where
-** passing it through is friendlier than failing.  The decoder is therefore
-** not injective, but it does not need to be: what must hold is that decoding
-** an encoded value returns the original, and that is what the round trip
-** test asserts.
+** A backslash that does not introduce one of the escapes above is an
+** ordinary byte, as in stock SQLite, and is copied through unchanged.  The
+** encoder escapes the pair of any input run that would otherwise decode, so
+** decoding an encoded value returns the original, which is what the round
+** trip test asserts.
 **
 ** This routine is a data-fidelity convenience and carries no part of the
 ** security argument, which rests on the encoder's output being matchertext.
 **
 ** The in-place form is what the parser uses, so that reading a value costs no
 ** allocation; the allocating form is for callers holding const input.
-**
-** bFull nonzero is the value alphabet, the inverse of TOMATCHERTEXT: matcher
-** escapes decode and \\ collapses.  Zero is the name alphabet for [...]:
-** matcher escapes only, a backslash stays an ordinary byte as in stock
-** SQLite.
 */
-i64 sqlite3MatchertextDecodeInPlace(char *z, i64 n, int bFull){
+i64 sqlite3MatchertextDecodeInPlace(char *z, i64 n){
   i64 i, j;
   int c;
 
@@ -521,10 +505,7 @@ i64 sqlite3MatchertextDecodeInPlace(char *z, i64 n, int bFull){
   /* Decoding only ever shortens, so the result can overwrite the input as the
   ** scan advances: j never runs ahead of i. */
   for(i=0, j=0; i<n; ){
-    if( bFull && z[i]==MT_ESC && i+1<n && z[i+1]==MT_ESC ){
-      z[j++] = MT_ESC;
-      i += 2;
-    }else if( z[i]==MT_ESC && i+3<n
+    if( z[i]==MT_ESC && i+3<n
            && (c = mtUnescape((unsigned char)z[i+1], (unsigned char)z[i+2],
                               (unsigned char)z[i+3]))!=0 ){
       z[j++] = (char)c;
@@ -557,15 +538,7 @@ char *sqlite3_matchertext_encode(const char *z, sqlite3_int64 n,
   if( z==0 ){ (void)SQLITE_MISUSE_BKPT; return 0; }
 #endif
   if( n<0 ) n = (i64)strlen(z);
-  return sqlite3MatchertextEncode(z, n, pn, 1);
-}
-char *sqlite3_matchertext_encode_name(const char *z, sqlite3_int64 n,
-                                      sqlite3_int64 *pn){
-#ifdef SQLITE_ENABLE_API_ARMOR
-  if( z==0 ){ (void)SQLITE_MISUSE_BKPT; return 0; }
-#endif
-  if( n<0 ) n = (i64)strlen(z);
-  return sqlite3MatchertextEncode(z, n, pn, 0);
+  return sqlite3MatchertextEncode(z, n, pn);
 }
 char *sqlite3_matchertext_decode(const char *z, sqlite3_int64 n,
                                  sqlite3_int64 *pn){
@@ -578,7 +551,7 @@ char *sqlite3_matchertext_decode(const char *z, sqlite3_int64 n,
   if( zOut==0 ) return 0;
   if( n>0 ) memcpy(zOut, z, (size_t)n);
   zOut[n] = 0;
-  n = sqlite3MatchertextDecodeInPlace(zOut, n, 1);
+  n = sqlite3MatchertextDecodeInPlace(zOut, n);
   if( pn ) *pn = n;
   return zOut;
 }
@@ -624,7 +597,7 @@ char *sqlite3MatchertextStockSql(sqlite3 *db, char *zSql){
       i64 nBody = bName ? n-2 : n-5;
       char *zBody = sqlite3DbStrNDup(db, &zSql[i + (bName ? 1 : 3)], nBody);
       if( zBody ){
-        sqlite3MatchertextDecodeInPlace(zBody, nBody, !bName);
+        sqlite3MatchertextDecodeInPlace(zBody, nBody);
         sqlite3_str_append(&acc, &zSql[iCopied], (int)(i-iCopied));
         sqlite3_str_appendf(&acc, bName ? "\"%w\"" : "%Q", zBody);
         sqlite3DbFree(db, zBody);

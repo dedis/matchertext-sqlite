@@ -989,7 +989,7 @@ void sqlite3_str_vappendf(
         }
         nVal = (i64)strlen(zVal);
         if( precision>=0 && precision<nVal ) nVal = precision;
-        zVal = sqlite3MatchertextEncode(zVal, nVal, &nVal, 1);
+        zVal = sqlite3MatchertextEncode(zVal, nVal, &nVal);
         if( zVal==0 ){
           sqlite3StrAccumSetError(pAccum, SQLITE_NOMEM);
           return;

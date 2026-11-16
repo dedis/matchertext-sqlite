@@ -112,8 +112,8 @@ SELECT [display(name)] FROM [users];
 ```
 
 The outer `[]` delimit the identifier. Matcher pairs inside the name must be
-balanced. The name reading decodes the matcher escapes but keeps every
-backslash. Use `sqlite3_matchertext_encode_name()` to place a name in a hole.
+balanced. The name reading decodes the matcher escapes and keeps every other
+backslash. Use `sqlite3_matchertext_encode()` to place a name in a hole.
 
 When a statement is stored in the schema, a value hole becomes a `'...'`
 literal of its value. A name hole stays `[...]` when it holds no bracket and
@@ -131,8 +131,8 @@ value with unmatched matchers.
 
 The new `%m` conversion in `sqlite3_mprintf()` is the encode-and-embed path.
 It accepts arbitrary NUL-terminated text, escapes only unmatched matchers and
-backslashes, and writes an `M'(...)'` value literal. The parser decodes the
-literal to the original value.
+the matched pair of any text that already reads as an escape, and writes an
+`M'(...)'` value literal. The parser decodes the literal to the original value.
 
 ```c
 char *sql = sqlite3_mprintf("SELECT %m", "smile :]");
@@ -143,8 +143,8 @@ int rc = sqlite3_matchertext_prepare_v3(db, sql, -1, 0, 0, 0, &stmt);
 sqlite3_free(sql);
 ```
 
-Balanced values without backslashes keep their original spelling inside the
-literal. The encoder changes only the representation required to preserve the
+Balanced values keep their original spelling inside the literal, backslashes
+included, unless they hold text that reads as an escape. The encoder changes only the representation required to preserve the
 hole boundary. The SQL value after decoding is unchanged.
 
 ## Public verification and encoding APIs
@@ -159,12 +159,6 @@ int sqlite3_matchertext_verify(
 
 char *sqlite3_matchertext_encode(
   const char *value,
-  sqlite3_int64 length,
-  sqlite3_int64 *output_length
-);
-
-char *sqlite3_matchertext_encode_name(
-  const char *name,
   sqlite3_int64 length,
   sqlite3_int64 *output_length
 );
@@ -184,7 +178,6 @@ The escape alphabet is:
 
 | Input | Encoded form |
 | --- | --- |
-| `\` | `\\` |
 | `(` | `\o()` |
 | `)` | `\c()` |
 | `[` | `\o[]` |
@@ -193,13 +186,10 @@ The escape alphabet is:
 | `}` | `\c{}` |
 
 Only unmatched matcher characters use these forms. A matched pair remains
-unchanged.
-
-`sqlite3_matchertext_encode_name()` uses the same matcher escapes for the
-`[...]` name hole. It does not double backslashes, because the name reading
-keeps them. Where the input already reads as an escape, such as `\o()`, it
-escapes that matched pair instead: `\o()` becomes `\o\o()\c()`. The name that
-SQLite reads is then exactly the input. `?I` uses this encoder.
+unchanged, and a backslash is an ordinary byte. Where the input already reads
+as an escape, such as `\o()`, the encoder escapes that matched pair:
+`\o()` becomes `\o\o()\c()`. The value or name that SQLite reads is then
+exactly the input. `%m` and `?I` use this encoder for both holes.
 
 ## Strict mode
 

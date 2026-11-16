@@ -1039,10 +1039,10 @@ int sqlite3_matchertext_prepare_v3(
           rc = SQLITE_ERROR;
           goto matchertext_prepare_out;
         }
-        /* The name alphabet makes the identifier read back as these bytes,
-        ** even where they already look like an escape. */
+        /* The encoder makes the identifier read back as these bytes, even
+        ** where they already look like an escape. */
         zName = sqlite3MatchertextEncode((const char*)pArg->data,
-                                         (i64)pArg->size, &nName, 0);
+                                         (i64)pArg->size, &nName);
         if( zName==0 || nName>0x7fffffff ){
           rc = zName==0 ? SQLITE_NOMEM_BKPT : SQLITE_TOOBIG;
           sqlite3_free(zName);

@@ -255,11 +255,11 @@ do_test 3.2.2 { execsql {SELECT M'(123)' + 1} } {124}   ;# by affinity, as '123'
 # 4.*: The value.
 #
 # What sits between the delimiters is delivered as data.  One decoding pass
-# runs over it, for the matchertext escape alphabet only: \\ is a backslash,
-# and \o() \c() \o[] \c[] \o{} \c{} are the six matchers, so a value that
-# could not embed verbatim can still be written.  SQL's own escaping never
-# applies: quotes do not double, and a backslash sequence that does not
-# spell one of the seven escapes passes through byte for byte.
+# runs over it, for the matchertext escape alphabet only: \o() \c() \o[]
+# \c[] \o{} \c{} are the six matchers, so a value that could not embed
+# verbatim can still be written.  SQL's own escaping never applies: quotes do
+# not double, and a backslash sequence that does not spell one of the six
+# escapes passes through byte for byte.
 
 do_execsql_test 4.0 {
   CREATE TABLE t1(name TEXT);
@@ -276,10 +276,10 @@ do_test 4.1.4 { execsql {SELECT length('it''s')} } {4}
 # 4.2: a backslash that does not introduce an escape is an ordinary byte
 do_test 4.2.1 { execsql {SELECT M'(a\nb)'} } [list {a\nb}]
 
-# 4.2.2+: the escape alphabet decodes.  A doubled backslash is one
-# backslash, and an escaped matcher is the matcher, which is how a value
+# 4.2.2+: the escape alphabet decodes.  A doubled backslash is two
+# backslashes, and an escaped matcher is the matcher, which is how a value
 # carrying an unmatched matcher is written at all.
-do_test 4.2.2 { execsql {SELECT M'(a\\b)'} } [list {a\b}]
+do_test 4.2.2 { execsql {SELECT M'(a\\b)'} } [list {a\\b}]
 do_test 4.2.3 { execsql {SELECT M'(\o())'} } {(}
 do_test 4.2.4 { execsql {SELECT M'(smile :\c[])'} } {{smile :]}}
 do_test 4.2.5 { execsql {SELECT length(M'(\o{})')} } {1}
@@ -857,8 +857,8 @@ foreach {tn val cnt} {
 do_execsql_test 10.10.9 { SELECT count(*) FROM t10; } {2}
 
 # 10.11: the round trip through %m is exact for any value at all.  The
-# reader decodes, so the writer escapes backslashes too, which is what makes
-# a value that already looks like an escape survive as itself.
+# reader decodes, so the writer escapes the pair of any text that already
+# reads as an escape, which is what makes such a value survive as itself.
 foreach {tn val} {
   1  {a\b}
   2  {\o()}
@@ -872,10 +872,14 @@ foreach {tn val} {
   } [list $val]
 }
 
-# What that costs in the SQL text: the escaped spelling, which is longer
+# What that costs in the SQL text: nothing for a plain backslash, and the
+# escaped spelling for text that reads as an escape
 do_test 10.11.7 {
   sqlite3_matchertext_printf {%m} "a\\b"
-} "M'(a\\\\b)'"
+} "M'(a\\b)'"
+do_test 10.11.8 {
+  sqlite3_matchertext_printf {%m} {\o()}
+} {M'(\o\o()\c())'}
 
 # 10.12: the public encoder and its inverse, the same routines %m uses,
 # for a caller placing a value in a hole itself
@@ -887,12 +891,12 @@ do_test 10.12.4 {
 } {a\o()b}
 do_test 10.12.5 { sqlite3_matchertext_encode {} } {}
 
-# 10.13: the name encoder.  A [...] name keeps its backslashes, so this
-# encoder leaves them alone and escapes the matched pair of any text that
-# already reads as an escape.  The name SQLite reads back is the input.
-do_test 10.13.1 { sqlite3_matchertext_encode_name {a\b} } {a\b}
-do_test 10.13.2 { sqlite3_matchertext_encode_name {\o()} } {\o\o()\c()}
-do_test 10.13.3 { sqlite3_matchertext_encode_name {x]y} } {x\c[]y}
+# 10.13: the same encoder places a name in a [...] hole.  It leaves
+# backslashes alone and escapes the matched pair of any text that already
+# reads as an escape.  The name SQLite reads back is the input.
+do_test 10.13.1 { sqlite3_matchertext_encode {a\b} } {a\b}
+do_test 10.13.2 { sqlite3_matchertext_encode {\o()} } {\o\o()\c()}
+do_test 10.13.3 { sqlite3_matchertext_encode {x]y} } {x\c[]y}
 foreach {tn name} {
   1  {a\b}
   2  {\o()}
@@ -901,7 +905,7 @@ foreach {tn name} {
   5  {plain}
 } {
   do_test 10.13.4.$tn {
-    db eval "SELECT 1 AS \[[sqlite3_matchertext_encode_name $name]\]" r {}
+    db eval "SELECT 1 AS \[[sqlite3_matchertext_encode $name]\]" r {}
     set r(*)
   } [list $name]
 }
@@ -962,7 +966,7 @@ do_test 11.1.3 {
 do_test 11.1.4 {
   sqlite3_matchertext_exec db {SELECT name FROM ?I ORDER BY name} I users
 } {alice bob}
-# ?I writes the name with the name encoder, so a name that reads as an
+# ?I writes the name with the encoder, so a name that reads as an
 # escape names exactly itself.
 do_test 11.1.5 {
   sqlite3_matchertext_exec db {CREATE TABLE ?I(x)} I {e\o()}
@@ -1464,11 +1468,11 @@ do_test 15.6.1 {
 # error repeats the value back in full, which is what says no part of it was
 # read as syntax.
 do_test 15.6.2 {
-  set enc [sqlite3_matchertext_encode_name {name] FROM sqlite_schema --[}]
+  set enc [sqlite3_matchertext_encode {name] FROM sqlite_schema --[}]
   catchsql "SELECT \[$enc\] FROM t15b"
 } {1 {no such column: name] FROM sqlite_schema --[}}
 do_test 15.6.3 {
-  set enc [sqlite3_matchertext_encode_name {odd name}]
+  set enc [sqlite3_matchertext_encode {odd name}]
   execsql "SELECT \[$enc\] FROM t15b"
 } {x}
 
