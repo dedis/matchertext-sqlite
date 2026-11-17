@@ -932,8 +932,9 @@ int sqlite3Reprepare(Vdbe *p){
 }
 
 #ifdef SQLITE_ENABLE_MATCHERTEXT
-/* Prepare one checked template and bind its ?V arguments. */
-int sqlite3_matchertext_prepare_v3(
+/* Prepare one checked template and bind its ?V arguments.  The
+** sqlite3_matchertext_prepare_v3() macro passes a literal template here. */
+int sqlite3_matchertext_prepare_unchecked(
   sqlite3 *db,
   const char *zTemplate,
   int nTemplate,
@@ -1129,6 +1130,107 @@ matchertext_prepare_out:
   rc = sqlite3ApiExit(db, rc);
   sqlite3_mutex_leave(db->mutex);
   return rc;
+}
+
+/* A statement built at run time: the literal pieces and the placeholders
+** in pTmpl, the arguments of the placeholders in aArg, and the first error
+** in rc. */
+struct sqlite3_matchertext_sql {
+  sqlite3_str *pTmpl;
+  sqlite3_matchertext_arg *aArg;
+  int nArg, nAlloc;
+  int rc;
+};
+
+sqlite3_matchertext_sql *sqlite3_matchertext_sql_new(void){
+  sqlite3_matchertext_sql *p;
+#ifndef SQLITE_OMIT_AUTOINIT
+  if( sqlite3_initialize() ) return 0;
+#endif
+  p = sqlite3_malloc64(sizeof(*p));
+  if( p==0 ) return 0;
+  memset(p, 0, sizeof(*p));
+  p->pTmpl = sqlite3_str_new(0);
+  return p;
+}
+
+/* The sqlite3_matchertext_sql_append() macro passes a literal piece here. */
+void sqlite3_matchertext_sql_append_unchecked(
+  sqlite3_matchertext_sql *p,
+  const char *zPiece
+){
+  if( p==0 || p->rc ) return;
+  if( zPiece==0 ){
+    p->rc = SQLITE_MISUSE_BKPT;
+    return;
+  }
+  sqlite3_str_appendall(p->pTmpl, zPiece);
+}
+
+/* Add one argument and its placeholder.  The spaces keep the placeholder a
+** token of its own whatever the pieces around it end and start with. */
+void sqlite3_matchertext_sql_arg(
+  sqlite3_matchertext_sql *p,
+  int eType,
+  const void *pData,
+  sqlite3_uint64 nData
+){
+  sqlite3_matchertext_arg *pArg;
+  if( p==0 || p->rc ) return;
+  if( eType!=SQLITE_MATCHERTEXT_VALUE && eType!=SQLITE_MATCHERTEXT_IDENTIFIER ){
+    p->rc = SQLITE_MISUSE_BKPT;
+    return;
+  }
+  if( p->nArg>=SQLITE_MAX_VARIABLE_NUMBER ){
+    p->rc = SQLITE_RANGE;
+    return;
+  }
+  if( p->nArg==p->nAlloc ){
+    int nNew = p->nAlloc ? p->nAlloc*2 : 8;
+    pArg = sqlite3_realloc64(p->aArg, nNew*sizeof(p->aArg[0]));
+    if( pArg==0 ){
+      p->rc = SQLITE_NOMEM_BKPT;
+      return;
+    }
+    p->aArg = pArg;
+    p->nAlloc = nNew;
+  }
+  pArg = &p->aArg[p->nArg++];
+  pArg->type = eType;
+  pArg->data = pData;
+  pArg->size = nData;
+  sqlite3_str_appendall(p->pTmpl,
+      eType==SQLITE_MATCHERTEXT_VALUE ? " ?V " : " ?I ");
+}
+
+int sqlite3_matchertext_sql_prepare(
+  sqlite3 *db,
+  sqlite3_matchertext_sql *p,
+  unsigned int prepFlags,
+  sqlite3_stmt **ppStmt
+){
+  int rc;
+  if( ppStmt==0 ) return SQLITE_MISUSE_BKPT;
+  *ppStmt = 0;
+  if( !sqlite3SafetyCheckOk(db) ) return SQLITE_MISUSE_BKPT;
+  rc = p==0 ? SQLITE_NOMEM_BKPT : p->rc;
+  if( rc==SQLITE_OK ) rc = sqlite3_str_errcode(p->pTmpl);
+  if( rc!=SQLITE_OK ){
+    sqlite3_mutex_enter(db->mutex);
+    sqlite3Error(db, rc);
+    sqlite3_mutex_leave(db->mutex);
+    return rc;
+  }
+  return sqlite3_matchertext_prepare_unchecked(db,
+      sqlite3_str_value(p->pTmpl), sqlite3_str_length(p->pTmpl), prepFlags,
+      p->aArg, p->nArg, ppStmt);
+}
+
+void sqlite3_matchertext_sql_free(sqlite3_matchertext_sql *p){
+  if( p==0 ) return;
+  sqlite3_free(sqlite3_str_finish(p->pTmpl));
+  sqlite3_free(p->aArg);
+  sqlite3_free(p);
 }
 #endif
 

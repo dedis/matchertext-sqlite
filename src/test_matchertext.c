@@ -48,6 +48,47 @@ static int SQLITE_TCLAPI test_matchertext_bypass(
   return TCL_OK;
 }
 
+/* Step the statement that a matchertext prepare returned with code rc, and
+** set the result to its rows or to the error. */
+static int mtStepAll(Tcl_Interp *interp, sqlite3 *db, int rc,
+                     sqlite3_stmt *pStmt){
+  Tcl_Obj *pError = 0;
+  Tcl_Obj *pResult;
+  int i;
+  pResult = Tcl_NewListObj(0, 0);
+  Tcl_IncrRefCount(pResult);
+  while( rc==SQLITE_OK && pStmt ){
+    rc = sqlite3_step(pStmt);
+    if( rc!=SQLITE_ROW ) break;
+    for(i=0; i<sqlite3_column_count(pStmt); i++){
+      const unsigned char *z = sqlite3_column_text(pStmt, i);
+      if( z==0 && sqlite3_column_type(pStmt, i)!=SQLITE_NULL ){
+        rc = SQLITE_NOMEM;
+        break;
+      }
+      Tcl_ListObjAppendElement(0, pResult,
+          z ? Tcl_NewStringObj((const char*)z, -1) : Tcl_NewObj());
+    }
+    if( rc==SQLITE_ROW ) rc = SQLITE_OK;
+  }
+  if( rc==SQLITE_DONE ) rc = SQLITE_OK;
+  if( rc!=SQLITE_OK ){
+    pError = Tcl_NewStringObj(sqlite3_errmsg(db), -1);
+  }
+  if( pStmt ){
+    int rc2 = sqlite3_finalize(pStmt);
+    if( rc==SQLITE_OK ) rc = rc2;
+  }
+  if( rc==SQLITE_OK ){
+    Tcl_SetObjResult(interp, pResult);
+  }else{
+    Tcl_SetObjResult(interp,
+        pError ? pError : Tcl_NewStringObj(sqlite3_errstr(rc), -1));
+  }
+  Tcl_DecrRefCount(pResult);
+  return rc==SQLITE_OK ? TCL_OK : TCL_ERROR;
+}
+
 /* Usage: sqlite3_matchertext_exec DB TEMPLATE ?V|I VALUE ...? */
 static int SQLITE_TCLAPI test_matchertext_exec(
   void *clientData,
@@ -58,8 +99,6 @@ static int SQLITE_TCLAPI test_matchertext_exec(
   sqlite3_matchertext_arg *aArg = 0;
   sqlite3 *db;
   sqlite3_stmt *pStmt = 0;
-  Tcl_Obj *pError = 0;
-  Tcl_Obj *pResult;
   int i;
   int nArg;
   int rc;
@@ -93,41 +132,59 @@ static int SQLITE_TCLAPI test_matchertext_exec(
       return TCL_ERROR;
     }
   }
-  pResult = Tcl_NewListObj(0, 0);
-  Tcl_IncrRefCount(pResult);
-  rc = sqlite3_matchertext_prepare_v3(db, Tcl_GetString(objv[2]), -1, 0,
-                                      aArg, nArg, &pStmt);
+  /* The script supplies the template, so this harness opts out of the
+  ** literal-only macro. */
+  rc = sqlite3_matchertext_prepare_unchecked(db, Tcl_GetString(objv[2]), -1,
+                                             0, aArg, nArg, &pStmt);
   sqlite3_free(aArg);
-  while( rc==SQLITE_OK && pStmt ){
-    rc = sqlite3_step(pStmt);
-    if( rc!=SQLITE_ROW ) break;
-    for(i=0; i<sqlite3_column_count(pStmt); i++){
-      const unsigned char *z = sqlite3_column_text(pStmt, i);
-      if( z==0 && sqlite3_column_type(pStmt, i)!=SQLITE_NULL ){
-        rc = SQLITE_NOMEM;
-        break;
-      }
-      Tcl_ListObjAppendElement(0, pResult,
-          z ? Tcl_NewStringObj((const char*)z, -1) : Tcl_NewObj());
+  return mtStepAll(interp, db, rc, pStmt);
+}
+
+/* Usage: sqlite3_matchertext_build DB ?P PIECE|V VALUE|I NAME ...?
+**
+** Build one statement with the sqlite3_matchertext_sql builder: P appends a
+** piece of SQL, V and I append an argument and its placeholder. */
+static int SQLITE_TCLAPI test_matchertext_build(
+  void *clientData,
+  Tcl_Interp *interp,
+  int objc,
+  Tcl_Obj *CONST objv[]
+){
+  sqlite3_matchertext_sql *pSql;
+  sqlite3 *db;
+  sqlite3_stmt *pStmt = 0;
+  int i;
+  int rc;
+  UNUSED_PARAMETER(clientData);
+
+  if( objc<2 || (objc&1)!=0 ){
+    Tcl_WrongNumArgs(interp, 1, objv, "DB ?P PIECE|V VALUE|I NAME ...?");
+    return TCL_ERROR;
+  }
+  if( getDbPointer(interp, Tcl_GetString(objv[1]), &db) ) return TCL_ERROR;
+  pSql = sqlite3_matchertext_sql_new();
+  for(i=2; i<objc; i+=2){
+    const char *zKind = Tcl_GetString(objv[i]);
+    if( strcmp(zKind, "P")==0 ){
+      /* The script supplies the piece, as for sqlite3_matchertext_exec. */
+      sqlite3_matchertext_sql_append_unchecked(pSql,
+                                               Tcl_GetString(objv[i+1]));
+    }else if( strcmp(zKind, "V")==0 || strcmp(zKind, "I")==0 ){
+      Tcl_Size n;
+      const unsigned char *z = Tcl_GetByteArrayFromObj(objv[i+1], &n);
+      sqlite3_matchertext_sql_arg(pSql,
+          zKind[0]=='V' ? SQLITE_MATCHERTEXT_VALUE
+                        : SQLITE_MATCHERTEXT_IDENTIFIER,
+          z, (sqlite3_uint64)n);
+    }else{
+      sqlite3_matchertext_sql_free(pSql);
+      Tcl_SetResult(interp, "kind must be P, V or I", TCL_STATIC);
+      return TCL_ERROR;
     }
-    if( rc==SQLITE_ROW ) rc = SQLITE_OK;
   }
-  if( rc==SQLITE_DONE ) rc = SQLITE_OK;
-  if( rc!=SQLITE_OK ){
-    pError = Tcl_NewStringObj(sqlite3_errmsg(db), -1);
-  }
-  if( pStmt ){
-    int rc2 = sqlite3_finalize(pStmt);
-    if( rc==SQLITE_OK ) rc = rc2;
-  }
-  if( rc==SQLITE_OK ){
-    Tcl_SetObjResult(interp, pResult);
-  }else{
-    Tcl_SetObjResult(interp,
-        pError ? pError : Tcl_NewStringObj(sqlite3_errstr(rc), -1));
-  }
-  Tcl_DecrRefCount(pResult);
-  return rc==SQLITE_OK ? TCL_OK : TCL_ERROR;
+  rc = sqlite3_matchertext_sql_prepare(db, pSql, 0, &pStmt);
+  sqlite3_matchertext_sql_free(pSql);
+  return mtStepAll(interp, db, rc, pStmt);
 }
 
 /*
@@ -292,6 +349,7 @@ int Sqlitetest_matchertext_Init(Tcl_Interp *interp){
     { "sqlite3_matchertext_encode", test_matchertext_recode, 0 },
     { "sqlite3_matchertext_decode", test_matchertext_recode, (void*)1 },
     { "sqlite3_matchertext_exec",   test_matchertext_exec, 0 },
+    { "sqlite3_matchertext_build",  test_matchertext_build, 0 },
     { "sqlite3_matchertext_test_bypass", test_matchertext_bypass, 0 },
   };
   int i;

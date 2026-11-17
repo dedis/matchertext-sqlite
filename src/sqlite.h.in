@@ -4374,10 +4374,50 @@ int sqlite3_set_errmsg(sqlite3 *db, int errcode, const char *zErrMsg);
 typedef struct sqlite3_stmt sqlite3_stmt;
 
 #ifdef SQLITE_ENABLE_MATCHERTEXT
-int sqlite3_matchertext_prepare_v3(
+/*
+** CAPI3REF: Constant Matchertext Templates
+**
+** ^The SQL outside the holes must come from the program, never from input.
+** ^sqlite3_matchertext_prepare_v3(D,T,N,F,A,K,P) and
+** sqlite3_matchertext_sql_append(Q,T) are macros that accept only a string
+** literal T: any other expression fails to compile.
+**
+** ^A statement built at run time goes through an [sqlite3_matchertext_sql]
+** builder.  ^sqlite3_matchertext_sql_append() adds a literal piece of SQL,
+** and sqlite3_matchertext_sql_arg() adds a ?V value or ?I identifier and
+** its placeholder.  ^The data of an argument must stay valid until
+** sqlite3_matchertext_sql_prepare(), which composes and prepares the
+** statement as sqlite3_matchertext_prepare_v3() does.  ^A piece that holds
+** a ? parameter of its own makes the prepare fail.  ^The first error, such
+** as an allocation failure, is kept and returned by the prepare.  ^The
+** other calls accept the NULL that a failed sqlite3_matchertext_sql_new()
+** returns, and the prepare then returns SQLITE_NOMEM.
+** ^sqlite3_matchertext_sql_free() releases the builder.
+**
+** ^The two _unchecked functions take a template or piece that is not a
+** literal.  ^A caller of one asserts that the text holds no input, and so
+** opts out of the guarantee that the macros give.
+*/
+typedef struct sqlite3_matchertext_sql sqlite3_matchertext_sql;
+int sqlite3_matchertext_prepare_unchecked(
   sqlite3*, const char*, int, unsigned int,
   const sqlite3_matchertext_arg*, int, sqlite3_stmt**
 );
+sqlite3_matchertext_sql *sqlite3_matchertext_sql_new(void);
+void sqlite3_matchertext_sql_append_unchecked(
+  sqlite3_matchertext_sql*, const char*
+);
+void sqlite3_matchertext_sql_arg(
+  sqlite3_matchertext_sql*, int, const void*, sqlite3_uint64
+);
+int sqlite3_matchertext_sql_prepare(
+  sqlite3*, sqlite3_matchertext_sql*, unsigned int, sqlite3_stmt**
+);
+void sqlite3_matchertext_sql_free(sqlite3_matchertext_sql*);
+#define sqlite3_matchertext_prepare_v3(D,T,N,F,A,K,P) \
+  sqlite3_matchertext_prepare_unchecked(D,"" T "",N,F,A,K,P)
+#define sqlite3_matchertext_sql_append(Q,T) \
+  sqlite3_matchertext_sql_append_unchecked(Q,"" T "")
 #endif
 
 /*

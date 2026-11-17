@@ -92,6 +92,36 @@ The output statement uses the standard `sqlite3_step()`, `sqlite3_reset()`,
 and `sqlite3_finalize()` lifecycle. The `prepFlags` argument accepts the normal
 `sqlite3_prepare_v3()` flags.
 
+### Constant SQL, run-time composition
+
+The SQL outside the placeholders must come from the program, never from input.
+`sqlite3_matchertext_prepare_v3()` is a macro that accepts only a string
+literal template: any other expression fails to compile.
+
+A statement built at run time, such as one with optional filters or an `IN`
+list of variable length, uses the `sqlite3_matchertext_sql` builder.
+`sqlite3_matchertext_sql_append()` is a macro that adds a literal piece of SQL.
+`sqlite3_matchertext_sql_arg()` adds a value or an identifier and its
+placeholder. The prepare applies the same checks as
+`sqlite3_matchertext_prepare_v3()`.
+
+```c
+sqlite3_matchertext_sql *q = sqlite3_matchertext_sql_new();
+sqlite3_matchertext_sql_append(q, "SELECT * FROM users WHERE 1");
+if( name ){
+  sqlite3_matchertext_sql_append(q, " AND name=");
+  sqlite3_matchertext_sql_arg(q, SQLITE_MATCHERTEXT_VALUE, name, strlen(name));
+}
+rc = sqlite3_matchertext_sql_prepare(db, q, 0, &stmt);
+sqlite3_matchertext_sql_free(q);
+```
+
+Text that is not a literal enters SQL only as an argument. The functions
+`sqlite3_matchertext_prepare_unchecked()` and
+`sqlite3_matchertext_sql_append_unchecked()` accept any string. A caller of
+either asserts that the text holds no input, and so opts out of this
+guarantee.
+
 ## Value and identifier holes
 
 The tokenizer adds a value literal whose boundary is found by matcher balance:
@@ -139,7 +169,7 @@ char *sql = sqlite3_mprintf("SELECT %m", "smile :]");
 /* sql is: SELECT M'(smile :\c[])' */
 
 sqlite3_stmt *stmt = 0;
-int rc = sqlite3_matchertext_prepare_v3(db, sql, -1, 0, 0, 0, &stmt);
+int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, 0);  /* not in strict mode */
 sqlite3_free(sql);
 ```
 

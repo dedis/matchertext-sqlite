@@ -1076,6 +1076,32 @@ do_test 11.8.1 {
   list [catch {sqlite3_matchertext_exec db {SELECT ?V} V {smile :]}} msg] $msg
 } {1 {matchertext argument 1 is not valid matchertext}}
 
+# 11.9: the builder composes a statement at run time from pieces and
+# arguments, and checks it as sqlite3_matchertext_prepare_v3() does.
+do_test 11.9.1 {
+  sqlite3_matchertext_build db P {SELECT name FROM users WHERE 1} \
+      P { AND name=} V alice
+} {alice}
+do_test 11.9.2 {
+  sqlite3_matchertext_build db P {SELECT name FROM users WHERE name IN (} \
+      V alice P , V bob P {) ORDER BY name}
+} {alice bob}
+do_test 11.9.3 {
+  sqlite3_matchertext_build db P {SELECT count(*) FROM} I users \
+      P {WHERE name=} V {' OR '1'='1}
+} {0}
+do_test 11.9.4 {
+  list [catch {
+    sqlite3_matchertext_build db P {SELECT count(*) FROM users WHERE name=} \
+        V {)' OR 1=1 --}
+  } msg] $msg
+} {1 {matchertext argument 1 is not valid matchertext}}
+do_test 11.9.5 {
+  list [catch {
+    sqlite3_matchertext_build db P {SELECT ?V,} V x
+  } msg] $msg
+} {1 {matchertext template has more placeholders than arguments}}
+
 #-------------------------------------------------------------------------
 # 12.*: Internal SQL, schema reload, and DQS.
 
