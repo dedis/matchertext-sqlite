@@ -1261,17 +1261,19 @@ ifcapable rbu {
 #-------------------------------------------------------------------------
 # 13.*: Legacy entry points and removed runtime controls.
 
-do_test 13.1.1 {
-  list [catch {db eval {CREATE TABLE legacy(x)}} msg] $msg
-} {1 {matchertext requires sqlite3_matchertext_prepare_v3(); pass inputs separately}}
-do_test 13.1.2 {
-  sqlite3_matchertext_exec db {
-    SELECT count(*) FROM sqlite_schema WHERE name=?V
-  } V legacy
-} {0}
-do_test 13.1.3 {
-  list [catch {sqlite3_prepare_v2 db {SELECT 1} -1 tail} msg] $msg
-} {1 {(21) matchertext requires sqlite3_matchertext_prepare_v3(); pass inputs separately}}
+ifcapable matchertext_strict {
+  do_test 13.1.1 {
+    list [catch {db eval {CREATE TABLE legacy(x)}} msg] $msg
+  } {1 {matchertext requires sqlite3_matchertext_prepare_v3(); pass inputs separately}}
+  do_test 13.1.2 {
+    sqlite3_matchertext_exec db {
+      SELECT count(*) FROM sqlite_schema WHERE name=?V
+    } V legacy
+  } {0}
+  do_test 13.1.3 {
+    list [catch {sqlite3_prepare_v2 db {SELECT 1} -1 tail} msg] $msg
+  } {1 {(21) matchertext requires sqlite3_matchertext_prepare_v3(); pass inputs separately}}
+}
 
 # The removed PRAGMA is unknown, and the removed db_config verb cannot turn
 # matchertext off.

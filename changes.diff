@@ -73,10 +73,10 @@ index 220367810c..2f851f13fc 100644
  	$(LTCOMPILE) $(CORE_COMPILE_OPTS) -c $(TOP)\src\mem0.c
  
 diff --git a/README.md b/README.md
-index 990befcd2d..d0e9e34d7c 100644
+index 990befcd2d..e07837336f 100644
 --- a/README.md
 +++ b/README.md
-@@ -1,428 +1,266 @@
+@@ -1,428 +1,275 @@
 -<h1 align="center">SQLite Source Repository</h1>
 -
 -This repository contains the complete source code for the
@@ -765,6 +765,15 @@ index 990befcd2d..d0e9e34d7c 100644
 +make OPTIONS="-DSQLITE_ENABLE_MATCHERTEXT -DSQLITE_MATCHERTEXT_STRICT \
 +  -DSQLITE_ENABLE_RBU" testfixture
 +./testfixture test/matchertext.test
++```
++
++The strict-mode cases of `test/matchertext.test` run only in a strict build
++(`ifcapable matchertext_strict`). The additive build must pass the stock suite:
++
++```sh
++make clean
++make OPTIONS="-DSQLITE_ENABLE_MATCHERTEXT" testfixture
++./testfixture test/testrunner.tcl full
 +```
 +
 +Compile the SQLite library or amalgamation with `SQLITE_ENABLE_MATCHERTEXT`.
@@ -3272,10 +3281,10 @@ index fbe7665bf2..a8b5ebbd98 100644
 +
  #endif /* SQLITEINT_H */
 diff --git a/src/test_config.c b/src/test_config.c
-index 6eb4b7e97f..bbdb109c30 100644
+index 6eb4b7e97f..f80869df03 100644
 --- a/src/test_config.c
 +++ b/src/test_config.c
-@@ -789,6 +789,12 @@ Tcl_SetVar2(interp, "sqlite_options", "mergesort", "1", TCL_GLOBAL_ONLY);
+@@ -789,6 +789,18 @@ Tcl_SetVar2(interp, "sqlite_options", "mergesort", "1", TCL_GLOBAL_ONLY);
    Tcl_SetVar2(interp, "sqlite_options", "normalize", "0", TCL_GLOBAL_ONLY);
  #endif
  
@@ -3283,6 +3292,12 @@ index 6eb4b7e97f..bbdb109c30 100644
 +  Tcl_SetVar2(interp, "sqlite_options", "matchertext", "1", TCL_GLOBAL_ONLY);
 +#else
 +  Tcl_SetVar2(interp, "sqlite_options", "matchertext", "0", TCL_GLOBAL_ONLY);
++#endif
++
++#if defined(SQLITE_ENABLE_MATCHERTEXT) && defined(SQLITE_MATCHERTEXT_STRICT)
++  Tcl_SetVar2(interp, "sqlite_options", "matchertext_strict", "1", TCL_GLOBAL_ONLY);
++#else
++  Tcl_SetVar2(interp, "sqlite_options", "matchertext_strict", "0", TCL_GLOBAL_ONLY);
 +#endif
 +
  #ifdef SQLITE_OMIT_WINDOWFUNC
@@ -3861,10 +3876,10 @@ index 1c9909a1aa..093b3febae 100644
    }else{
 diff --git a/test/matchertext.test b/test/matchertext.test
 new file mode 100644
-index 0000000000..f04d101308
+index 0000000000..be83a9da86
 --- /dev/null
 +++ b/test/matchertext.test
-@@ -0,0 +1,1574 @@
+@@ -0,0 +1,1576 @@
 +# 2026 July 29
 +#
 +# The author disclaims copyright to this source code.  In place of
@@ -5128,17 +5143,19 @@ index 0000000000..f04d101308
 +#-------------------------------------------------------------------------
 +# 13.*: Legacy entry points and removed runtime controls.
 +
-+do_test 13.1.1 {
-+  list [catch {db eval {CREATE TABLE legacy(x)}} msg] $msg
-+} {1 {matchertext requires sqlite3_matchertext_prepare_v3(); pass inputs separately}}
-+do_test 13.1.2 {
-+  sqlite3_matchertext_exec db {
-+    SELECT count(*) FROM sqlite_schema WHERE name=?V
-+  } V legacy
-+} {0}
-+do_test 13.1.3 {
-+  list [catch {sqlite3_prepare_v2 db {SELECT 1} -1 tail} msg] $msg
-+} {1 {(21) matchertext requires sqlite3_matchertext_prepare_v3(); pass inputs separately}}
++ifcapable matchertext_strict {
++  do_test 13.1.1 {
++    list [catch {db eval {CREATE TABLE legacy(x)}} msg] $msg
++  } {1 {matchertext requires sqlite3_matchertext_prepare_v3(); pass inputs separately}}
++  do_test 13.1.2 {
++    sqlite3_matchertext_exec db {
++      SELECT count(*) FROM sqlite_schema WHERE name=?V
++    } V legacy
++  } {0}
++  do_test 13.1.3 {
++    list [catch {sqlite3_prepare_v2 db {SELECT 1} -1 tail} msg] $msg
++  } {1 {(21) matchertext requires sqlite3_matchertext_prepare_v3(); pass inputs separately}}
++}
 +
 +# The removed PRAGMA is unknown, and the removed db_config verb cannot turn
 +# matchertext off.

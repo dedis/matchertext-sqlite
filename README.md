@@ -260,6 +260,15 @@ make OPTIONS="-DSQLITE_ENABLE_MATCHERTEXT -DSQLITE_MATCHERTEXT_STRICT \
 ./testfixture test/matchertext.test
 ```
 
+The strict-mode cases of `test/matchertext.test` run only in a strict build
+(`ifcapable matchertext_strict`). The additive build must pass the stock suite:
+
+```sh
+make clean
+make OPTIONS="-DSQLITE_ENABLE_MATCHERTEXT" testfixture
+./testfixture test/testrunner.tcl full
+```
+
 Compile the SQLite library or amalgamation with `SQLITE_ENABLE_MATCHERTEXT`.
 Client code that uses the new declarations must also define this flag when it
 includes `sqlite3.h`. Only the library build needs
