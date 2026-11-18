@@ -325,16 +325,13 @@ i64 sqlite3MatchertextEnd(const unsigned char *z){
 ** rather than sitting outside it.  A scanner counting balance sees \o() go up
 ** by one and back down, never negative and never leaving anything pending.
 **
-** Note for the Lean development: to_matchertext.lean derives the output-is-
-** matchertext theorem from
+** In the Lean development, to_matchertext.lean derives the output-is-
+** matchertext theorems (toMatchertext_mt, toMatchertextC_mt) from
 **
-**   hesc : forall c x, x in esc c -> Nonmatcher Pi x
+**   hesc : forall c, MT Pi (esc c) /\ depth Pi (esc c) = 0
 **
-** which asks that an escape hold no matcher and so establishes MT (esc c) by
-** the flat rule.  That hypothesis is stronger than the theorem needs.  These
-** escapes satisfy MT (esc c) by the nesting rule instead, so generalizing
-** hesc to the weaker "forall c, MT Pi (esc c)" would cover them, and esc_mt
-** becomes one way of discharging it rather than the only way.
+** and esc_mt_paired discharges it for these escapes, which are matchertext
+** by the nesting rule: a backslash, a tag, and a matched pair.
 **
 ** The backslash is the introducer.  It is not escaped itself: a backslash
 ** decodes as an escape only before 'o' or 'c' and an adjacent matched pair,
@@ -396,10 +393,13 @@ char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut){
   i64 i, j, nOut;
   int d = 0;
   int k;
-  /* Positions of openers not yet matched.  The depth cap below bounds how
-  ** many there can be, so this is a fixed size rather than one slot per
-  ** input byte.  Positions are i64: an int would truncate past 2 GiB. */
-  i64 aStk[SQLITE_MAX_MATCHER_DEPTH];
+  /* Positions of openers not yet matched.  There are fewer than n and fewer
+  ** than the depth cap below, so the array has the smaller of the two sizes.
+  ** It shares the heap allocation of aEsc: a cap-sized array on the stack
+  ** would be 8 KB, too much for SQLITE_SMALL_STACK.  Positions are i64: an
+  ** int would truncate past 2 GiB. */
+  i64 *aStk;
+  i64 nStk;
 
   assert( n>=0 );
   assert( z!=0 || n==0 );
@@ -411,8 +411,10 @@ char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut){
     return zOut;
   }
 
-  aEsc = sqlite3_malloc64((sqlite3_uint64)n);
-  if( aEsc==0 ) return 0;
+  nStk = n<SQLITE_MAX_MATCHER_DEPTH ? n : SQLITE_MAX_MATCHER_DEPTH;
+  aStk = sqlite3_malloc64(sizeof(i64)*(sqlite3_uint64)nStk + (sqlite3_uint64)n);
+  if( aStk==0 ) return 0;
+  aEsc = (unsigned char*)&aStk[nStk];
   memset(aEsc, 0, (size_t)n);
 
   /* Pass one: find the matchers that are not matched.  Nesting past
@@ -425,6 +427,7 @@ char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut){
       if( d>=SQLITE_MAX_MATCHER_DEPTH-1 ){
         aEsc[i] = 1;
       }else{
+        assert( d<nStk );
         aStk[d++] = i;
       }
     }else if( d>0 && mtClass((unsigned char)z[aStk[d-1]])== -k ){
@@ -455,7 +458,7 @@ char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut){
   }
   zOut = sqlite3_malloc64((sqlite3_uint64)nOut + 1);
   if( zOut==0 ){
-    sqlite3_free(aEsc);
+    sqlite3_free(aStk);
     return 0;
   }
   for(i=0, j=0; i<n; i++){
@@ -473,7 +476,7 @@ char *sqlite3MatchertextEncode(const char *z, i64 n, i64 *pnOut){
   assert( j==nOut );
   zOut[j] = 0;
 
-  sqlite3_free(aEsc);
+  sqlite3_free(aStk);
   if( pnOut ) *pnOut = nOut;
   return zOut;
 }
@@ -573,12 +576,23 @@ static int mtStockName(const char *z, i64 n){
 ** stored in the schema, into stock SQLite syntax, so that a database this
 ** build writes stays readable by a build without matchertext.  A value hole
 ** M'(...)' becomes a '...' literal of its value.  A name hole [...] stays as
-** it is when stock SQLite reads the same name from it, and becomes "..."
-** otherwise.  Return the result, which is zSql itself when nothing changes.
+** it is when stock SQLite reads the same name from it, and becomes `...`
+** otherwise: stock SQLite reads a grave-accent name as a name only, where a
+** "..." name that resolves to no column reads as a string under the
+** double-quoted-string fallback.  Return the result, which is zSql itself when nothing changes.
 ** After an error zSql is freed and the return is 0: an OOM sets
 ** db->mallocFailed, and a result too long is reported to the parser running,
 ** if there is one.
 */
+/* Append z to p as a name in grave accents, each accent in it doubled. */
+static void mtAppendGraveName(sqlite3_str *p, const char *z){
+  sqlite3_str_appendchar(p, 1, '`');
+  for(; *z; z++){
+    sqlite3_str_appendchar(p, *z=='`' ? 2 : 1, *z);
+  }
+  sqlite3_str_appendchar(p, 1, '`');
+}
+
 char *sqlite3MatchertextStockSql(sqlite3 *db, char *zSql){
   StrAccum acc;
   i64 i = 0;          /* Offset of the current token */
@@ -599,7 +613,11 @@ char *sqlite3MatchertextStockSql(sqlite3 *db, char *zSql){
       if( zBody ){
         sqlite3MatchertextDecodeInPlace(zBody, nBody);
         sqlite3_str_append(&acc, &zSql[iCopied], (int)(i-iCopied));
-        sqlite3_str_appendf(&acc, bName ? "\"%w\"" : "%Q", zBody);
+        if( bName ){
+          mtAppendGraveName(&acc, zBody);
+        }else{
+          sqlite3_str_appendf(&acc, "%Q", zBody);
+        }
         sqlite3DbFree(db, zBody);
         iCopied = i+n;
         bChanged = 1;
